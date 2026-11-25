@@ -17,3 +17,10 @@ tempfile = { workspace = true }
 nosey-registry = { path = "../nosey-registry" }
 nosey-scanner = { path = "../nosey-scanner" }
 nosey-recommendation = { path = "../nosey-recommendation" }
+
+sha2 = { workspace = true }
+serde_yaml = { workspace = true }
+walkdir = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { workspace = true }

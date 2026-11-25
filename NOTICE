@@ -28,3 +28,7 @@ projectdetect (richardwooding/projectdetect-rs), MIT license,
 Copyright (c) 2026 Richard Wooding, commit 6b756065e0cb74a2e121381afa7cead4c145b262.
 See licenses/projectdetect-MIT.txt. Modified for Nosey's aggregate registry
 rules and global directory exclusion policy.
+
+Central library and install-preview/revalidation patterns adapted from Kitter
+v0.2.6 (Apache-2.0), src/library.rs and src/project/install.rs. Modified for
+explicit fixture import, no-replace linking and journaled ownership.

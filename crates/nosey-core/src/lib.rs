@@ -8,6 +8,14 @@ use thiserror::Error;
 
 /// Native read-only project target discovery.
 pub mod skill_discovery;
+#[cfg(target_os = "linux")]
+mod library_io;
+/// Central local fixture library.
+#[cfg(target_os = "linux")]
+pub mod library;
+/// Explicit installation preview, journal and approval services.
+#[cfg(target_os = "linux")]
+pub mod changes;
 mod project_activity;
 mod freshness;
 pub use freshness::{Freshness, SavedEvaluation};
