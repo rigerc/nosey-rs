@@ -1,0 +1,7 @@
+schema_version: '1.0.0'
+ai_catalog_version: '1.0'
+id: synthetic
+intelligence_extension: org.example.nosey.intelligence
+host:
+  displayName: Synthetic Test Registry
+  identifier: did:example:synthetic-registry

@@ -1,0 +1,4 @@
+identifier: urn:example:skill:beta
+type: application/agent-skills+md
+displayName: Fixture beta
+url: https://example.org/beta/SKILL.md

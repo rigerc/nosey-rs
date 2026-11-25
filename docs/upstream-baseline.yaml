@@ -1,0 +1,28 @@
+destination:
+  repository: https://github.com/rigerc/nosey-rs
+  ref: master
+  commit: aa8524b59af6d12bac34671a5643059497e296e5
+  visibility_observed: public
+  build: not_run
+upstreams:
+  kitter:
+    repository: https://github.com/what1f/kitter
+    candidate_commit: 19711db044aabfa9846a65aaee693276d65af5c2
+    version: '0.2.6'
+    build: not_run
+  nosey9:
+    repository: https://github.com/rigerc/nosey-9
+    candidate_commit: dca90b0528f01bf7962c72aae27fc2ab3492c3ac
+    build: not_run
+  source_registry:
+    repository: https://github.com/rigerc/nosey-registry
+    candidate_commit: 52321e75f3795510c27c5bc1ff01715f4b98a0dc
+    redistribution: pending_review
+    imported_data: false
+  sdk:
+    repository: https://github.com/Agent-Card/ai-catalog-rust
+    candidate_commit: 920ef70e1e5a602e142137f9ea6a1135fedbf110
+    version: '0.4.0'
+    declared_spec: '1.0'
+    normative_revision: unverified
+    build: not_run

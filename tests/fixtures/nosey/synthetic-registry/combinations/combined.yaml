@@ -1,0 +1,7 @@
+id: synthetic:combination.combined
+technologies:
+  - synthetic:technology.alpha
+  - synthetic:technology.beta
+skills:
+  - urn:example:skill:combined
+  - urn:example:skill:alpha
