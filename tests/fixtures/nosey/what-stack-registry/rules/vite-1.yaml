@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.vite-1
+technology: what-stack-reference:technology.vite
+kind: file
+pathScope: basename
+pathRegex: '^vite\.config(\.(js|cjs|mjs|ts|cts|mts))?$'

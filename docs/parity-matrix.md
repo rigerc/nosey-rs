@@ -23,3 +23,8 @@ Kitter is a selective source reference, not a parity target. Validate adapted be
 See [Kitter integration baseline](kitter-integration-baseline.md) for the archive tree verification, exact safety blockers and baseline commands.
 
 Saved-scan freshness fingerprints are independent of mapping and priority-only changes; removal suggestions require a current complete scan. Explore search covers five implemented entity kinds (skills, technologies, rules, mappings, combinations). No production connectivity or global configuration UI is wired yet. External executable adapters remain fail-closed.
+
+| what-stack `aa79257` src/config/files.rs | bounded regular-file reads and nonblocking Unix opens | Adapted to rooted descriptor-relative opens, no symlink traversal, hard byte cap and explicit failure. |
+| what-stack src/config/rules.rs, src/config/python.rs | filename, extension and dependency heuristics | Translated supported positive predicates to a candidate fixture registry; no runtime dependency or first-match precedence; compound/source/import and runtime-only conditions deferred. |
+
+See [what-stack selective reuse](what-stack-source-reuse.md).

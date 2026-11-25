@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.gatsby-1
+technology: what-stack-reference:technology.gatsby
+kind: file
+pathScope: basename
+pathRegex: '^gatsby-config(\.(js|cjs|mjs|ts|cts|mts))?$'

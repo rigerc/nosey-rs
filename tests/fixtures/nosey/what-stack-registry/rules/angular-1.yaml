@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.angular-1
+technology: what-stack-reference:technology.angular
+kind: file
+pathScope: basename
+pathRegex: '^angular\.json$'

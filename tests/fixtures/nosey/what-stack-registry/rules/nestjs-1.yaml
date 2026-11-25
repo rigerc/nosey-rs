@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.nestjs-1
+technology: what-stack-reference:technology.nestjs
+kind: file
+pathScope: basename
+pathRegex: '^nest-cli\.json$'

@@ -1,0 +1,15 @@
+# Selective what-stack reuse
+
+Source: [what-stack v0.1.1 at aa79257](https://github.com/ehsan18t/what-stack/tree/aa792571b5829b50dda71644857532dd80e302b8); MIT, copyright 2026 Ehsan Khan. License retained in `licenses/what-stack-MIT.txt`.
+
+Nosey does not depend on the crate or use its first-match classifier. The candidate fixture registry under `tests/fixtures/nosey/what-stack-registry` contains 27 technology definitions and 40 positive detection rules, translated from upstream config and Python tables into the existing Nosey grammar. These are candidate data for later reviewed migration into the official registry, not built-in, activated or authoritative production rules. Canonical fixture IDs must not be confused with production IDs.
+
+- Filename prefixes use the upstream's exact common config suffixes; root-only scope is intentionally broadened to any permitted nested path in Nosey.
+- Next.js, Remix and NestJS retain both independent file and dependency signals. The Remix routing-core package alone is not a match. SvelteKit uses its package identifier, not a shared Svelte config filename. That is a deliberate adaptation of the upstream conjunction, not equivalent detection semantics.
+- Python framework rules use existing parsed dependency observations. No lockfile confirmation, source import/constructor conjunction or generic Python fallback was copied. Exact requirements-name normalization and lockfile observations remain independent work.
+- Omitted: upstream process/root discovery, hardcoded precedence, runtime-only Express distinction, conjunctive Laravel/Symfony/Rails/Rack, Spring Boot/Phoenix comment-sensitive token heuristics, and image classification. Do not weaken conjunctions into OR or invent new rule kinds. Review independently against the production registry before adding.
+- Extension and file signals identify build artifacts or configuration markers, not proof of active runtime use. No skills or mappings are invented for these fixture definitions.
+
+The scanner's bounded reader adapts upstream nonblocking-open and opened-handle type checks. On Unix it opens each relative component through a directory descriptor using safe rustix APIs, refuses symlinks, verifies regular-file type on the opened handle, and reports size failures instead of truncating. This is stronger than path-based opens but does not establish a snapshot or solve concurrent directory renames, mount changes, hardlink provenance, enumeration races, or blocked filesystem I/O. Non-Unix scanning fails closed until a native equivalent exists; Linux x86-64 remains the product target. The rule fingerprint is bumped to invalidate older scans.
+
+Regression tests exercise aggregate Next.js/Remix/Vite/Rust/Python detection, false positives from shared configuration names and unrelated package names, no implicit detection without registry rules, link/ancestor escapes, size limits and FIFO rejection. No local build, test execution or benchmark was performed.

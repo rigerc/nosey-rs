@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.next-js-2
+technology: what-stack-reference:technology.next-js
+kind: dependency
+ecosystem: npm
+name: 'next'

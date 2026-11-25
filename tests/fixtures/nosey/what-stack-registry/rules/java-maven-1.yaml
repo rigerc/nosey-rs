@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.java-maven-1
+technology: what-stack-reference:technology.java-maven
+kind: file
+pathScope: basename
+pathRegex: '^pom\.xml$'

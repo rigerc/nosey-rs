@@ -31,3 +31,11 @@ upstreams:
     declared_spec: '1.0'
     normative_revision: unverified
     build: not_run
+  what_stack:
+    repository: https://github.com/ehsan18t/what-stack
+    candidate_commit: aa792571b5829b50dda71644857532dd80e302b8
+    version: '0.1.1'
+    role: selective_source_reference
+    license: MIT
+    runtime_dependency: false
+    build: not_run

@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.litestar-1
+technology: what-stack-reference:technology.litestar
+kind: dependency
+ecosystem: python
+name: 'litestar'

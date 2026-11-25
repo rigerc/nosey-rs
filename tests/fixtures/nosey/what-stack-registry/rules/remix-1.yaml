@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.remix-1
+technology: what-stack-reference:technology.remix
+kind: file
+pathScope: basename
+pathRegex: '^remix\.config(\.(js|cjs|mjs|ts|cts|mts))?$'

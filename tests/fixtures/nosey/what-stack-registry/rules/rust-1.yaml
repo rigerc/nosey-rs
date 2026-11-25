@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.rust-1
+technology: what-stack-reference:technology.rust
+kind: file
+pathScope: basename
+pathRegex: '^Cargo\.toml$'

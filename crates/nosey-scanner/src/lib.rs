@@ -8,9 +8,10 @@ mod yaml_providers;
 mod terraform;
 mod pattern;
 mod versions;
+mod bounded_io;
 use nosey_registry::{CatalogIndex, Rule};
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeMap,BTreeSet}, fs, io::Read, path::{Path,PathBuf}, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
+use std::{collections::{BTreeMap,BTreeSet}, fs, path::{Path,PathBuf}, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
 use sha2::{Digest,Sha256};
 use walkdir::WalkDir;
 use globset::{Glob,GlobSetBuilder};
@@ -111,7 +112,7 @@ pub fn fingerprints(index:&CatalogIndex,settings:&Settings)->Result<(String,Stri
         let mut active:Vec<_>=i.rules.iter().filter(|r|!r.disabled).collect();active.sort_by(|a,b|a.id.cmp(&b.id));
         (&i.registry_id,tech,active)
     }).collect();rules.sort_by(|a,b|a.0.cmp(b.0));
-    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v3",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
+    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v4",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
 }
 fn mark(result:&mut ScanResult,code:&str){if result.completeness==Completeness::Complete{result.completeness=Completeness::Incomplete;} result.diagnostics.insert(code.into());}
 fn expired(start:Instant,settings:&Settings,cancel:&AtomicBool,result:&mut ScanResult)->bool{
@@ -127,6 +128,7 @@ pub fn scan(root:&Path,index:&CatalogIndex,settings:&Settings,cancel:&AtomicBool
     let mut result=ScanResult{completeness:Completeness::Complete,technologies:BTreeMap::new(),diagnostics:BTreeSet::new(),rule_digest,settings_digest};
     let mut excludes=GlobSetBuilder::new();for glob in &settings.exclusions{excludes.add(Glob::new(glob).map_err(|_|"invalid exclusion glob")?);}let excludes=excludes.build().map_err(|_|"invalid exclusions")?;
     if !root.is_dir()||fs::symlink_metadata(root).is_err()||fs::symlink_metadata(root).is_ok_and(|m|m.file_type().is_symlink()){result.completeness=Completeness::Failed;result.diagnostics.insert("invalid-root".into());return Ok(result);}
+    let reader=match bounded_io::RootReader::new(root){Ok(reader)=>reader,Err(_)=>{result.completeness=Completeness::Failed;result.diagnostics.insert("safe-root-open-failed".into());return Ok(result);}};
     let rules:Vec<(&str,&Rule)>=index.intelligence.iter().flat_map(|(_,i)|i.rules.iter().filter(|r|!r.disabled).map(|r|(i.registry_id.as_str(),r))).collect();
     let mut compiled=Vec::new();for (registry,rule) in rules{if !index.technologies.contains(&rule.technology){mark(&mut result,"unresolved-technology");continue;}match matcher::Matcher::new(&rule.matcher,settings.mcp){Ok(m)=>compiled.push((registry,rule,m)),Err(code)=>mark(&mut result,code)}}
     let start=Instant::now();let mut count=0_usize;
@@ -141,7 +143,7 @@ pub fn scan(root:&Path,index:&CatalogIndex,settings:&Settings,cancel:&AtomicBool
         let Ok(relative)=entry.path().strip_prefix(root) else{mark(&mut result,"path-escape");continue;};let Some(path)=relative.to_str() else{mark(&mut result,"non-utf8-path");continue;};
         let needs=entry.file_type().is_file()&&compiled.iter().any(|(_,_,m)|m.needs_bytes(path));
         let mut bytes=None;
-        if needs{let read=(||->std::io::Result<Vec<u8>>{let mut data=Vec::new();fs::File::open(entry.path())?.take(settings.max_bytes as u64+1).read_to_end(&mut data)?;Ok(data)})();match read{Ok(data) if data.len()<=settings.max_bytes=>bytes=Some(data),_=>mark(&mut result,"file-read-or-size-limit")}}
+        if needs{match reader.read(relative,settings.max_bytes){Ok(data)=>bytes=Some(data),Err(_)=>mark(&mut result,"file-read-or-size-limit")}}
         for (registry,rule,m) in &compiled {if expired(start,settings,cancel,&mut result){break;}match m.matches(path,entry.file_type().is_dir(),bytes.as_deref()){
             Ok(ids)=>{for observed in ids{result.technologies.entry(rule.technology.clone()).or_default().insert(Evidence{path:relative.to_path_buf(),registry:(*registry).to_owned(),rule:rule.id.clone(),identifier:observed.identifier,match_kind:Some(observed.kind),version:observed.version});}},Err(code)=>mark(&mut result,code)}}
     }

@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.sveltekit-1
+technology: what-stack-reference:technology.sveltekit
+kind: dependency
+ecosystem: npm
+name: '@sveltejs/kit'
