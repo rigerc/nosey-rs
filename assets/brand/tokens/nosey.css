@@ -1,0 +1,13 @@
+:root {
+  --nosey-ground: #14100A;
+  --nosey-parchment: #F5E6C8;
+  --nosey-nose: #FFB000;
+  --nosey-nose-on-light: #8A5A00;
+  --nosey-bg: var(--nosey-parchment);
+  --nosey-fg: var(--nosey-ground);
+  --nosey-accent: var(--nosey-nose-on-light);
+  --nosey-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --nosey-bg: var(--nosey-ground); --nosey-fg: var(--nosey-parchment); --nosey-accent: var(--nosey-nose); }
+}

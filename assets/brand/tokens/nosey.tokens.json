@@ -1,0 +1,31 @@
+{
+  "brand": {
+    "ground": "#14100A",
+    "parchment": "#F5E6C8",
+    "nose": "#FFB000",
+    "nose-on-light": "#8A5A00"
+  },
+  "dark": {
+    "background": "#14100A",
+    "foreground": "#F5E6C8",
+    "accent": "#FFB000"
+  },
+  "light": {
+    "background": "#F5E6C8",
+    "foreground": "#14100A",
+    "accent": "#8A5A00"
+  },
+  "typography": {
+    "ui": "ui-monospace, SFMono-Regular, Consolas, Liberation Mono, monospace"
+  },
+  "logo": {
+    "minHorizontalWidthPx": 144,
+    "minMarkWidthPx": 24,
+    "clearSpace": "one eye diameter (20.6 design units)"
+  },
+  "contrast": {
+    "#F5E6C8/#14100A": 15.37,
+    "#FFB000/#14100A": 10.34,
+    "#8A5A00/#F5E6C8": 4.81
+  }
+}
