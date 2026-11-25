@@ -5,10 +5,10 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | Upstream path | Observed mechanism | Destination / status |
 |---|---|---|
 | Kitter src/library.rs, src/source/* | Library and acquisition | Not imported; source inventory only |
-| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Not imported; prototype central project state is not Kitter parity |
-| Kitter src/effective_skills/*, src/agent_plugins/* | Effective target and plugins | Not imported; injected target facts only |
-| Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Not imported; prototype not production storage |
-| Kitter src/ui/*, src/bin/kitter-desktop.rs, src/assets.rs | GPUI | Not imported or built |
+| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Project activity and non-destructive unregister ported; native direct-target discovery added; installer remains a Nosey feature |
+| Kitter src/effective_skills/*, src/agent_plugins/* | Effective target and plugins | Native direct-child discovery and link inspection adapted; agent-specific discovery and canonical coverage outstanding |
+| Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Project activity ported into prototype state; Nosey-owned storage design; no upstream format compatibility required |
+| Kitter src/ui/*, src/bin/kitter-desktop.rs, src/assets.rs | GPUI | Reference only; reuse components selectively for Nosey |
 | Kitter Cargo.toml, crates/ztracing-shim | GPUI git deps, optional desktop, shim | Lockfile and policy review outstanding |
 | Nosey-9 internal/detection/evaluate.go | file (glob/regex), extension, content, dotenv | Implemented subset; regex uses bounded Rust regex rather than ECMAScript regexp2; differences untested |
 | Nosey-9 internal/detection/observe.go | npm, composer, cargo, python, go, ruby, hex, deno, docker | Partial providers implemented; missing JSONC, compose, exact Go/Ruby/Python parity; versions not persisted |
@@ -18,4 +18,6 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | SDK ai-catalog, trust, validate | Standard model, strict parse, semantic validation | Integrated against inspected signatures; compile not run |
 | SDK ai-catalog-discover | Discovery/fetch | Not integrated |
 
-No parity claim until upstream fixtures, native baseline builds, quality gates and this slice pass. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
+Kitter is a selective source reference, not a parity target. Validate adapted behavior in Nosey; Nosey-9 detection parity and SDK requirements are unchanged. No successful build is claimed. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
+
+See [Kitter integration baseline](kitter-integration-baseline.md) for the archive tree verification, exact safety blockers and baseline commands.

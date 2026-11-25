@@ -2,6 +2,8 @@
 
 ## 3. Upstream audit and parity boundaries
 
+> **Maintainer clarification (2026-11-25):** Kitter is a starting point for selective source reuse, not an application to fork, rebrand wholesale, or reproduce. Reuse, adapt, or replace only code that serves Nosey's specified behavior, with attribution and Nosey-native tests. Building the untouched Kitter application, retaining its storage format, reproducing its CLI/UI, and full Kitter parity are not prerequisites. This clarification supersedes conflicting Kitter-specific import/parity gates in the earlier plan; Nosey product requirements, Nosey-9 detection parity, SDK interoperability and repository quality gates remain in force.
+
 ### 3.1 Audit deliverables
 
 Before restructuring, establish the current template baseline and build and test the pinned Kitter Linux CLI/desktop in a separate reference checkout; build Nosey-9 as a development reference where feasible. Inventory actual source modules, persistent formats, commands, GPUI views, agent capability model, source retrieval, symlink handling, presets, and detection rule grammar/fixtures. Document each feature in `docs/parity-matrix.md` with upstream source reference, expected behavior, Rust destination, disposition and test evidence. Do not claim parity from README descriptions alone.

@@ -2,6 +2,8 @@
 
 ## 19. Phased implementation backlog
 
+> **Maintainer clarification (2026-11-25):** Kitter is a starting point for selective source reuse, not an application to fork, rebrand wholesale, or reproduce. Reuse, adapt, or replace only code that serves Nosey's specified behavior, with attribution and Nosey-native tests. Building the untouched Kitter application, retaining its storage format, reproducing its CLI/UI, and full Kitter parity are not prerequisites. This clarification supersedes conflicting Kitter-specific import/parity gates in the earlier plan; Nosey product requirements, Nosey-9 detection parity, SDK interoperability and repository quality gates remain in force.
+
 The earlier 20–34 developer-week estimate no longer reflects the approved scope. Removed features reduce complexity, while Registry Studio, linked presets, shared change review and the updater add work. Re-estimate after Phase 0 from the actual pinned source and existing reusable GPUI functionality. No delivery date is committed. The following private milestones define dependencies and exit gates, not public releases.
 
 ### Phase 0 — Existing workspace adoption and upstream audit
