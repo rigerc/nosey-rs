@@ -93,6 +93,8 @@ impl ReviewedCatalog {
     ///
     /// Rejects invalid local namespace or mismatched intelligence ownership.
     pub fn approve(&self, id: &str, priority: u32, extension: &str) -> Result<RegistryConfig, Error> {
+        // Official namespace is reserved until its built-in endpoint is configured.
+        if id.eq_ignore_ascii_case("official") { return Err(Error::Invalid("official registry namespace is reserved".into())); }
         validate_namespace(&self.snapshot, id, extension)?;
         Ok(RegistryConfig {
             id: id.into(), priority, enabled: true, identity: self.identity.clone(),
@@ -111,7 +113,9 @@ impl ReviewedCatalog {
         if !config.enabled || !config.approved || config.identity != self.identity {
             return Err(Error::Invalid("registry requires explicit matching approval".into()));
         }
-        if config.require_operator && !self.verification.catalog_authorized {
+        if config.require_operator && (!self.verification.catalog_authorized
+            || !self.snapshot.catalog.signature.as_ref().is_some_and(|signature|
+                config.authorized_operators.contains(&signature.signer))) {
             return Err(Error::Invalid("required operator verification unavailable".into()));
         }
         validate_namespace(&self.snapshot, &config.id, extension)?;
