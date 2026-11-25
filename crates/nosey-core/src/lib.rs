@@ -5,6 +5,10 @@ use nosey_registry::CatalogIndex;
 use serde::{Serialize,Deserialize};
 use std::{collections::{BTreeMap,BTreeSet},fs,io::{Read,Write},path::{Path,PathBuf},sync::atomic::AtomicBool};
 use thiserror::Error;
+
+pub mod kitter_audit;
+mod project_activity;
+
 /// Central state failures.
 #[derive(Debug,Error)]
 pub enum Error{/// Filesystem failure.
@@ -22,7 +26,11 @@ pub struct Project{/// Saved latest usable scan.
 #[derive(Debug,Default,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct State{/// Registered project directories.
-    pub projects:BTreeMap<PathBuf,Project>}
+    pub projects:BTreeMap<PathBuf,Project>,
+    /// Last explicit project activity, using Kitter's millisecond ordering.
+    #[serde(default)]
+    pub project_activity:BTreeMap<PathBuf,u64>}
+
 impl State{
     /// Load the explicitly selected central state file.
     /// # Errors
@@ -35,7 +43,7 @@ impl State{
     /// Explicitly register an existing project directory.
     /// # Errors
     /// Refuses non-directories or inaccessible paths.
-    pub fn register(&mut self,path:&Path)->Result<PathBuf,Error>{let root=path.canonicalize()?;if !root.is_dir(){return Err(Error::Invalid("project is not a directory".into()));}self.projects.entry(root.clone()).or_default();Ok(root)}
+    pub fn register(&mut self,path:&Path)->Result<PathBuf,Error>{let root=path.canonicalize()?;if !root.is_dir(){return Err(Error::Invalid("project is not a directory".into()));}if !self.projects.contains_key(&root){self.projects.insert(root.clone(),Project::default());self.touch_project(&root);}Ok(root)}
     /// Run a manual scan and retain prior usable results after failed/cancelled attempts.
     /// # Errors
     /// Unregistered roots and invalid settings fail without state mutation.

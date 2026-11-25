@@ -5,9 +5,9 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | Upstream path | Observed mechanism | Destination / status |
 |---|---|---|
 | Kitter src/library.rs, src/source/* | Library and acquisition | Not imported; source inventory only |
-| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Not imported; prototype central project state is not Kitter parity |
-| Kitter src/effective_skills/*, src/agent_plugins/* | Effective target and plugins | Not imported; injected target facts only |
-| Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Not imported; prototype not production storage |
+| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Project activity and non-destructive unregister ported; installer and full parity outstanding |
+| Kitter src/effective_skills/*, src/agent_plugins/* | Effective target and plugins | Read-only Kitter ProjectOutput audit bridge added; runtime engine and canonical coverage outstanding |
+| Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Project activity ported into prototype state; Kitter persistence import outstanding |
 | Kitter src/ui/*, src/bin/kitter-desktop.rs, src/assets.rs | GPUI | Not imported or built |
 | Kitter Cargo.toml, crates/ztracing-shim | GPUI git deps, optional desktop, shim | Lockfile and policy review outstanding |
 | Nosey-9 internal/detection/evaluate.go | file (glob/regex), extension, content, dotenv | Implemented subset; regex uses bounded Rust regex rather than ECMAScript regexp2; differences untested |
@@ -19,3 +19,5 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | SDK ai-catalog-discover | Discovery/fetch | Not integrated |
 
 No parity claim until upstream fixtures, native baseline builds, quality gates and this slice pass. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
+
+See [Kitter integration baseline](kitter-integration-baseline.md) for the archive tree verification, exact safety blockers and baseline commands.

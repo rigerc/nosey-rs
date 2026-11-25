@@ -1,7 +1,7 @@
 destination:
   repository: https://github.com/rigerc/nosey-rs
   ref: master
-  commit: aa8524b59af6d12bac34671a5643059497e296e5
+  commit: b33eb5d50cabf62b25bee3c0cf124f9f1bfb7e5d
   visibility_observed: public
   build: not_run
 upstreams:
@@ -9,6 +9,9 @@ upstreams:
     repository: https://github.com/what1f/kitter
     candidate_commit: 19711db044aabfa9846a65aaee693276d65af5c2
     version: '0.2.6'
+    verified_tree: 2850d10f64ec6b3e1ff0f250666e8cc90cb60b25
+    source_archive_verified: true
+    tracked_files: 284
     build: not_run
   nosey9:
     repository: https://github.com/rigerc/nosey-9
