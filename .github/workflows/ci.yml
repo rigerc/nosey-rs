@@ -283,7 +283,7 @@ jobs:
           components: llvm-tools-preview
       - uses: ./.github/actions/setup-rust
       - name: Install verification tooling
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b  # v2
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2
         with:
           tool: cargo-nextest,cargo-llvm-cov,cargo-audit,cargo-deny,cargo-machete
       - name: Install quality-check tooling
