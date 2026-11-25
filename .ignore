@@ -1,0 +1,7 @@
+# Search-tool ignore file (ripgrep/fd; used by Claude, Codex, OpenCode, Pi search).
+# Keeps bulky reference material and generated context out of default searches.
+# Files stay in git and are still readable/searchable by explicit path.
+.agents/skills/hyprland/
+.agents/events/
+.agents/skills-evaluation/iterations/
+llms-full.txt

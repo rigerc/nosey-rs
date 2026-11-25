@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "nosey_rs",
+  "project_id": "6da6a46a-974f-4003-b858-f822615f88ce"
+}

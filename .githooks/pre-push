@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-push hook: the thorough checks that are too slow for every commit.
+# Runs clippy (all targets/features) and cargo-deny via scripts/harness-check.sh.
+# Configure with: git config core.hooksPath .githooks   (done by bootstrap.sh)
+# Bypass once with: git push --no-verify
+set -euo pipefail
+
+if [[ -f "$HOME/.cargo/env" ]]; then
+  # shellcheck source=/dev/null
+  source "$HOME/.cargo/env"
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+bash scripts/harness-check.sh clippy
+
+if command -v cargo-deny >/dev/null 2>&1; then
+  bash scripts/harness-check.sh deny
+else
+  printf '! cargo-deny not installed - skipping dependency policy check (run ./scripts/bootstrap.sh)\n'
+fi

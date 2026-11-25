@@ -1,0 +1,472 @@
+---
+# .github/workflows/ci.yml
+# 2026 Best Practice Rust CI Pipeline
+# Runs on: push to main/develop, all PRs
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  CARGO_BUILD_JOBS: "2"
+  # Disable incremental compilation in CI to reduce I/O overhead.
+  CARGO_INCREMENTAL: "0"
+  RUSTC_WRAPPER: sccache
+  SCCACHE_GHA_ENABLED: "true"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ───────────────────────────────────────────────────
+  # Path filtering to optimize CI execution
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
+      heavy: ${{ steps.filter.outputs.heavy }}
+      agents: ${{ steps.filter.outputs.agents }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'crates/**'
+              - 'src/**'
+              - 'examples/**'
+              - 'tests/**'
+              - 'benchmarks/**'
+              - 'fuzz/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'config/**'
+              - 'schema/**'
+              - 'scripts/**'
+              - '.cargo/**'
+              - 'deny.toml'
+              - 'rustfmt.toml'
+              - '.clippy.toml'
+              - 'do-harness.toml'
+              - 'HARNESS.md'
+              - 'Makefile'
+              - 'Makefile.monitoring'
+              - '.config/nextest.toml'
+            docs:
+              - '*.md'
+              - '**/*.md'
+            heavy:
+              - 'crates/**'
+              - 'src/**'
+              - 'examples/**'
+              - 'benchmarks/**'
+              - 'fuzz/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+            agents:
+              - 'AGENTS.md'
+              - 'CLAUDE.md'
+              - 'agents-docs/**'
+              - '.agents/skills/**'
+              - '.agents/skills-optional/**'
+              - '.agents/SKILLS.md'
+              - '.agents/agent-adapters.toml'
+              - 'schema/agent-adapters.schema.json'
+              - 'scripts/validate-agent-entrypoints.sh'
+              - 'scripts/generate-skills-md.sh'
+            workflows:
+              - '.github/workflows/**'
+
+  # ───────────────────────────────────────────────────
+  validate-agents:
+    name: Validate Agent Entrypoints
+    needs: [changes]
+    if: >
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.agents == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+      - name: Run agent validator
+        run: ./scripts/validate-agent-entrypoints.sh
+      - name: Validate adapter manifest
+        run: cargo run --quiet -p xtask --bin xtask -- agents validate
+        env:
+          RUSTC_WRAPPER: ""
+      - name: Test llms context generation
+        run: bash tests/generate_llms_txt_test.sh
+
+  # ───────────────────────────────────────────────────
+  lint:
+    name: Template Metadata Checks
+    needs: [changes]
+    if: >
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.code == 'true' ||
+      needs.changes.outputs.agents == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check for placeholder values
+        continue-on-error: true
+        run: |
+          if grep -rE 'your-org|Your Name|your-repo|your-crate' Cargo.toml; then
+            echo "::warning::Placeholder values found in Cargo.toml. Run init-template.sh first."
+          fi
+      - name: Validate agent metrics schema
+        run: |
+          if [ -f .agents/metrics.jsonl ]; then
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then
+                echo "$line" | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              required = ['timestamp','agent','skill','success']
+              for f in required:
+                  assert f in d, f'Missing field: {f}'
+          except Exception as e:
+              print(f'Validation failed: {e}')
+              sys.exit(1)
+          " || exit 1
+              fi
+            done < .agents/metrics.jsonl
+            echo "Agent metrics validation OK"
+          fi
+      # Commitlint is enforced via dedicated .github/workflows/commitlint.yml
+
+  # ───────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────
+  bench:
+    name: Benchmarks
+    needs: [changes]
+    if: >
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.heavy == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+      - uses: ./.github/actions/setup-rust
+      - name: Run benchmarks
+        run: |
+          set -o pipefail
+          cargo bench --workspace 2>&1 | tee bench-output.txt
+      - name: Test benchmark parser
+        run: bash tests/parse_bench_test.sh
+      - name: Parse and save bench results
+        run: |
+          set -euo pipefail
+          BENCH_DIR="benchmarks/events/$(date -u +%Y/%m/%d)"
+          mkdir -p "${BENCH_DIR}"
+          python3 scripts/parse_bench.py bench-output.txt \
+            ${{ github.sha }} $(date -u +%Y-%m-%dT%H:%M:%SZ) target/criterion \
+            > "${BENCH_DIR}/${{ github.sha }}.jsonl"
+          rows=$(wc -l < "${BENCH_DIR}/${{ github.sha }}.jsonl")
+          echo "Recorded ${rows} benchmark rows"
+          if [ "${rows}" -eq 0 ]; then
+            echo "::error::benchmark run produced no rows; the telemetry pipeline is broken"
+            exit 1
+          fi
+      - name: Update benchmark history
+        run: bash scripts/update-bench-history.sh
+      - name: Benchmark comparison (informational)
+        run: |
+          set -uo pipefail
+          {
+            echo "### Benchmark comparison (informational)"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          bash scripts/compare-benchmarks.sh \
+            --commit-a auto --commit-b "${{ github.sha }}" 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload benchmark events
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: benchmark-events
+          path: |
+            benchmarks/events/
+            benchmarks/history.jsonl
+
+  # ───────────────────────────────────────────────────
+  version-check:
+    name: VERSION consistency check
+    needs: [changes]
+    if: >
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.code == 'true' ||
+      needs.changes.outputs.agents == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check VERSION matches Cargo.toml
+        run: bash scripts/propagate-version.sh --check
+      - name: Check template version badge matches changelog
+        run: bash scripts/check-template-version.sh
+      - name: Check llms.txt is current
+        run: |
+          bash scripts/generate-llms-txt.sh
+          git diff --exit-code llms.txt || (echo "llms.txt is stale, run scripts/generate-llms-txt.sh" && exit 1)
+      - name: Check .agents/SKILLS.md is current
+        run: |
+          bash scripts/generate-skills-md.sh
+          MSG="regenerate with scripts/generate-skills-md.sh"
+          git diff --exit-code .agents/SKILLS.md \
+            || (echo ".agents/SKILLS.md is stale, ${MSG}" && exit 1)
+
+  # ───────────────────────────────────────────────────
+  # ───────────────────────────────────────────────────
+  # Config-driven verification (issue #285): which checks run per trigger is decided by
+  # config/xtask.json — not by magic values in this YAML. PRs run the fast `pull-request`
+  # tier; pushes to protected branches run the deep `protected-branch` tier. The GHA job
+  # summary also prints the resolved plan for every configured tier.
+  #
+  # The job name MUST stay a static literal. A `name:` containing a `${{ }}`
+  # expression is only evaluated when the job RUNS; when the job is skipped,
+  # GitHub reports the raw unevaluated expression as the check name (e.g.
+  # "Quality Gate (${{ github.event_name == ... }})"). A branch ruleset that
+  # requires the context "Quality Gate (pull-request)" then never matches a
+  # skipped job, and the PR is blocked from merging with no failing check to
+  # explain why. Keep this name in sync with the required_status_checks
+  # contexts in the repository ruleset.
+  quality-gate:
+    name: Quality Gate (pull-request)
+    needs: [changes]
+    if: >
+      github.event_name != 'pull_request' ||
+      needs.changes.outputs.code == 'true' ||
+      needs.changes.outputs.docs == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Report resolved tier
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TIER=pull-request
+          else
+            TIER=protected-branch
+          fi
+          echo "Resolved quality tier: $TIER"
+          echo "### Resolved quality tier: \`$TIER\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          components: llvm-tools-preview
+      - uses: ./.github/actions/setup-rust
+      - name: Install verification tooling
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b  # v2
+        with:
+          tool: cargo-nextest,cargo-llvm-cov,cargo-audit,cargo-deny,cargo-machete
+      - name: Install quality-check tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck yamllint
+          npm install -g markdownlint-cli2
+          # PyYAML backs the workflow contract tests; do not rely on the
+          # runner image shipping it, or those tests degrade to no-ops.
+          python3 -m pip install --user pyyaml
+      - name: Install actionlint
+        run: |
+          ACTIONLINT_VERSION=1.7.12
+          SCRIPT=https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash
+          bash <(curl -fsSL "${SCRIPT}") "${ACTIONLINT_VERSION}" /usr/local/bin
+          actionlint --version
+      - name: Publish configured verification tiers
+        run: |
+          echo "### Verification tiers (config/xtask.json)" >> "$GITHUB_STEP_SUMMARY"
+          for tier in pull-request protected-branch scheduled release; do
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "#### Tier \`$tier\`" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cargo run --quiet -p xtask --bin xtask -- quality plan --tier "$tier" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Run trigger tier
+        env:
+          XTASK_TEST_COVERAGE: "1"
+        run: |
+          TIER=pull-request
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            TIER=protected-branch
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          echo "Running config-driven quality tier: $TIER"
+          if [ -n "$BASE" ]; then
+            cargo run --quiet -p xtask --bin xtask -- quality run --tier "$TIER" --changed-from "$BASE"
+          else
+            cargo run --quiet -p xtask --bin xtask -- quality run --tier "$TIER"
+          fi
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
+          fail_ci_if_error: false
+      - name: Validate CI quality ownership contract
+        run: bash tests/ci_quality_ownership_test.sh
+      - name: Validate quality gate fail-closed contracts
+        run: bash tests/quality_gate_contracts_test.sh
+      - name: Validate do-harness integration
+        run: bash tests/do_harness_integration_test.sh
+      - name: Validate CI regression matrix
+        run: bash tests/ci_regression_matrix_test.sh
+      - name: Validate release provenance regression fixture
+        run: bash tests/release_provenance_test.sh
+      - name: Validate workflow permissions
+        run: bash tests/workflow_permissions_test.sh
+      - name: Validate quality-gate telemetry contract
+        run: bash tests/ci_telemetry/telemetry_integration_test.sh --use-existing
+      - name: Publish quality summary
+        if: always()
+        run: |
+          if [ -f .agents/ci/quality-summary.md ]; then
+            cat .agents/ci/quality-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload CI telemetry
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ci-telemetry
+          path: .agents/ci/quality-run.json
+          if-no-files-found: warn
+
+  # ───────────────────────────────────────────────────
+  ci-success:
+    name: CI Success
+    needs:
+      - changes
+      - validate-agents
+      - lint
+      - bench
+      - version-check
+      - quality-gate
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Write CI status summary
+        run: |
+          cat > .agents/ci/ci-status.json << EOF
+          {
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "jobs": {
+              "validate-agents": "${{ needs.validate-agents.result }}",
+              "lint": "${{ needs.lint.result }}",
+              "bench": "${{ needs.bench.result }}",
+              "version-check": "${{ needs.version-check.result }}",
+              "quality-gate": "${{ needs.quality-gate.result }}"
+            },
+            "overall": "${{ job.status }}"
+          }
+          EOF
+
+      - name: Update CI summary markdown
+        run: |
+          status_symbol() {
+            case "$1" in
+              success) echo "✅ success" ;;
+              skipped) echo "⚪ skipped" ;;
+              failure) echo "❌ failed" ;;
+              cancelled) echo "🚫 cancelled" ;;
+              *) echo "❓ $1" ;;
+            esac
+          }
+
+          STATUS_VALIDATE_AGENTS=$(status_symbol "${{ needs.validate-agents.result }}")
+          STATUS_LINT=$(status_symbol "${{ needs.lint.result }}")
+          STATUS_BENCH=$(status_symbol "${{ needs.bench.result }}")
+          STATUS_VERSION_CHECK=$(status_symbol "${{ needs.version-check.result }}")
+          STATUS_QUALITY_GATE=$(status_symbol "${{ needs.quality-gate.result }}")
+
+          cat > .agents/ci/ci-summary.md << EOF
+          # CI Status Summary
+
+          **Last updated:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          **Commit:** ${{ github.sha }}
+          **Branch:** ${{ github.ref_name }}
+
+          ## Job Results
+
+          | Job | Status |
+          |---|---|
+          | validate-agents | $STATUS_VALIDATE_AGENTS |
+          | lint | $STATUS_LINT |
+          | bench | $STATUS_BENCH |
+          | version-check | $STATUS_VERSION_CHECK |
+          | quality-gate | $STATUS_QUALITY_GATE |
+
+          ## Known Issues
+          - None
+
+          ## Flaky Tests
+          - None detected in last 10 runs
+          EOF
+          cat .agents/ci/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI status as artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ci-status
+          path: |
+            .agents/ci/ci-status.json
+            .agents/ci/ci-summary.md
+
+      - name: Check all required jobs passed or legitimately skipped
+        run: |
+          cat << 'EOF' | bash ./scripts/ci-required-evaluate.sh
+          {
+            "event_name": "${{ github.event_name }}",
+            "changes_result": "${{ needs.changes.result }}",
+            "changes": {
+              "code": "${{ needs.changes.outputs.code }}",
+              "docs": "${{ needs.changes.outputs.docs }}",
+              "heavy": "${{ needs.changes.outputs.heavy }}",
+              "agents": "${{ needs.changes.outputs.agents }}",
+              "workflows": "${{ needs.changes.outputs.workflows }}"
+            },
+            "jobs": {
+              "validate-agents": "${{ needs.validate-agents.result }}",
+              "lint": "${{ needs.lint.result }}",
+              "bench": "${{ needs.bench.result }}",
+              "version-check": "${{ needs.version-check.result }}",
+              "quality-gate": "${{ needs.quality-gate.result }}"
+            }
+          }
+          EOF

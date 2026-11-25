@@ -1,0 +1,39 @@
+# do-harness.toml
+# Configuration for do-harness in rust-2026-template.
+# Uses language = "generic" to delegate quality check execution to xtask
+# (via scripts/quality-gates.sh), preventing duplicate Cargo/clippy/test passes.
+
+language = "generic"
+
+[signal-sets]
+feedback = ["quality-gates"]
+verification = ["quality-gates"]
+release = ["quality-gates"]
+
+[[sensors]]
+name = "quality-gates"
+argv = ["bash", "scripts/quality-gates.sh"]
+# Applicability globs for `do-harness verify --changed`.
+# "Cargo.toml" covers the workspace root manifest; "**/Cargo.toml" covers
+# workspace member manifests (inside and outside `crates/`). Both are declared
+# because "Cargo.toml" alone never matches a nested member manifest, while
+# "**/Cargo.toml" alone relies on the glob engine treating a leading "**/" as
+# optional at the repository root. Declaring both makes the intent explicit
+# and keeps the selection stable across glob dialects.
+# Rust sources match on the file shape ("**/*.rs") rather than a fixed
+# directory list, so a source file in a directory this repository does not
+# know about (for example `tools/*/src/*.rs`) still selects the sensor.
+# Avoid bare wildcards such as "**" — they select the sensor on Markdown-only
+# edits and defeat the documentation-only fast path.
+when-changed = [
+  "**/*.rs",
+  "Cargo.toml",
+  "**/Cargo.toml",
+  "Cargo.lock",
+  "**/Cargo.lock",
+  "rust-toolchain.toml",
+  "deny.toml",
+  ".cargo/audit.toml",
+  "config/xtask.json",
+  "scripts/**/*.sh"
+]

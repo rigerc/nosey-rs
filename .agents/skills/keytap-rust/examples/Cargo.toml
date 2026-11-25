@@ -1,0 +1,9 @@
+[package]
+name = "keytap-skill-examples"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[dependencies]
+keytap = "0.4"

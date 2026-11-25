@@ -1,0 +1,13 @@
+[package]
+name = "hello_world"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+example-crate = { path = "../../crates/example-crate", version = "0.0.0" }

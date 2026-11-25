@@ -1,0 +1,388 @@
+---
+# .github/workflows/security-scan.yml
+# Consolidated single source of truth for security scanning workflows
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly on Monday at 8am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    outputs:
+      scan_outcome: ${{ steps.record-result.outputs.scan_outcome }}
+      failure_type: ${{ steps.record-result.outputs.failure_type }}
+    steps:
+      - id: checkout
+        name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - id: scan
+        name: Run Gitleaks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          if command -v gitleaks >/dev/null 2>&1; then
+            gitleaks detect --report-format json --report-path gitleaks-report.json --verbose
+            EXIT_CODE=$?
+          else
+            docker run --rm -v "$PWD:/path" zricethezav/gitleaks:latest \
+              detect --source="/path" --report-format json --report-path /path/gitleaks-report.json --verbose
+            EXIT_CODE=$?
+          fi
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Gitleaks detected hardcoded secrets or sensitive credentials."
+            exit $EXIT_CODE
+          fi
+
+      - id: upload-artifact
+        name: Upload Gitleaks Artifact
+        if: failure() || steps.scan.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - id: record-result
+        name: Record Execution Outcome
+        if: always()
+        run: |
+          if [ "${{ steps.checkout.outcome }}" = "failure" ]; then
+            echo "failure_type=infrastructure_failure" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.scan.outcome }}" = "failure" ]; then
+            echo "failure_type=security_finding" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "failure_type=none" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=success" >> "$GITHUB_OUTPUT"
+          fi
+
+  # cargo-audit: Dedicated Security Advisory Scanner
+  # Responsibility: Audits Cargo.lock against the RustSec Advisory Database (.cargo/audit.toml)
+  # for known vulnerability advisories (CVEs) and advisory ignores.
+  cargo-audit:
+    name: Vulnerability Audit (cargo-audit)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      scan_outcome: ${{ steps.record-result.outputs.scan_outcome }}
+      failure_type: ${{ steps.record-result.outputs.failure_type }}
+      audited_graph: ${{ steps.check-lockfile.outputs.audited_graph }}
+    steps:
+      - id: checkout
+        name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - id: setup-rust
+        name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          toolchain: stable
+
+      - id: install-audit
+        name: Install cargo-audit
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b
+        with:
+          tool: cargo-audit
+
+      - id: check-lockfile
+        name: Determine Lockfile Strategy
+        run: |
+          if git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || [ -f Cargo.lock ]; then
+            echo "lockfile_tracked=true" >> "$GITHUB_OUTPUT"
+            echo "audited_graph=Committed Cargo.lock" >> "$GITHUB_OUTPUT"
+            echo "Auditing committed Cargo.lock without regeneration."
+          else
+            echo "lockfile_tracked=false" >> "$GITHUB_OUTPUT"
+            echo "audited_graph=Resolved latest-compatible graph" >> "$GITHUB_OUTPUT"
+            echo "No committed Cargo.lock found (library profile);"
+            echo "generating temporary lockfile in isolated step for audit."
+          fi
+
+      - id: generate-lockfile
+        name: Generate temporary lockfile for untracked profiles
+        if: steps.check-lockfile.outputs.lockfile_tracked == 'false'
+        run: cargo generate-lockfile
+
+      - id: scan
+        name: Run cargo audit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          cargo audit --json > cargo-audit-report.json 2> cargo-audit-err.log
+          AUDIT_EXIT=$?
+          cargo audit > cargo-audit-text.log 2>&1
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            echo "::error::cargo-audit identified security vulnerabilities or advisory violations."
+            exit $AUDIT_EXIT
+          fi
+
+      - id: verify-lockfile-unchanged
+        name: Verify committed lockfile was unchanged
+        if: steps.check-lockfile.outputs.lockfile_tracked == 'true'
+        run: |
+          if ! git diff --exit-code Cargo.lock; then
+            echo "::error::Committed Cargo.lock was unexpectedly modified during cargo-audit!"
+            exit 1
+          fi
+
+      - id: upload-artifact
+        name: Upload Audit Artifacts
+        if: failure() || steps.scan.outcome == 'failure' || steps.verify-lockfile-unchanged.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: cargo-audit-report
+          path: |
+            cargo-audit-report.json
+            cargo-audit-text.log
+            cargo-audit-err.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - id: record-result
+        name: Record Execution Outcome
+        if: always()
+        run: |
+          if [ "${{ steps.checkout.outcome }}" = "failure" ] || \
+             [ "${{ steps.setup-rust.outcome }}" = "failure" ] || \
+             [ "${{ steps.install-audit.outcome }}" = "failure" ] || \
+             [ "${{ steps.check-lockfile.outcome }}" = "failure" ] || \
+             [ "${{ steps.generate-lockfile.outcome }}" = "failure" ] || \
+             [ "${{ steps.verify-lockfile-unchanged.outcome }}" = "failure" ]; then
+            echo "failure_type=infrastructure_failure" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.scan.outcome }}" = "failure" ]; then
+            echo "failure_type=security_finding" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "failure_type=none" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=success" >> "$GITHUB_OUTPUT"
+          fi
+
+  # cargo-deny: Multi-check Supply Chain Policy Engine
+  # Responsibility: Enforces supply chain policies defined in deny.toml across 4 distinct areas:
+  # advisories (vulnerabilities), licenses (acceptable SPDX licenses), bans (duplication & banned crates),
+  # and sources (allowed registries and repositories).
+  cargo-deny:
+    name: Dependency Policy (cargo-deny)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      scan_outcome: ${{ steps.record-result.outputs.scan_outcome }}
+      failure_type: ${{ steps.record-result.outputs.failure_type }}
+      audited_graph: ${{ steps.check-lockfile.outputs.audited_graph }}
+    steps:
+      - id: checkout
+        name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - id: setup-rust
+        name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          toolchain: stable
+
+      - id: install-deny
+        name: Install cargo-deny
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b
+        with:
+          tool: cargo-deny
+
+      - id: check-lockfile
+        name: Determine Lockfile Strategy
+        run: |
+          if git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || [ -f Cargo.lock ]; then
+            echo "lockfile_tracked=true" >> "$GITHUB_OUTPUT"
+            echo "audited_graph=Committed Cargo.lock" >> "$GITHUB_OUTPUT"
+            echo "Auditing committed Cargo.lock without regeneration."
+          else
+            echo "lockfile_tracked=false" >> "$GITHUB_OUTPUT"
+            echo "audited_graph=Resolved latest-compatible graph" >> "$GITHUB_OUTPUT"
+            echo "No committed Cargo.lock found (library profile);"
+            echo "generating temporary lockfile in isolated step for check."
+          fi
+
+      - id: generate-lockfile
+        name: Generate temporary lockfile for untracked profiles
+        if: steps.check-lockfile.outputs.lockfile_tracked == 'false'
+        run: cargo generate-lockfile
+
+      - id: scan
+        name: Run cargo deny check
+        run: |
+          set +e
+          cargo deny --format json check > cargo-deny-report.json 2> cargo-deny-err.log
+          DENY_EXIT=$?
+          cargo deny check > cargo-deny-text.log 2>&1
+          if [ $DENY_EXIT -ne 0 ]; then
+            echo "::error::cargo-deny detected dependency policy violations."
+            exit $DENY_EXIT
+          fi
+
+      - id: verify-lockfile-unchanged
+        name: Verify committed lockfile was unchanged
+        if: steps.check-lockfile.outputs.lockfile_tracked == 'true'
+        run: |
+          if ! git diff --exit-code Cargo.lock; then
+            echo "::error::Committed Cargo.lock was unexpectedly modified during cargo-deny!"
+            exit 1
+          fi
+
+      - id: upload-artifact
+        name: Upload Deny Artifacts
+        if: failure() || steps.scan.outcome == 'failure' || steps.verify-lockfile-unchanged.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: cargo-deny-report
+          path: |
+            cargo-deny-report.json
+            cargo-deny-text.log
+            cargo-deny-err.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - id: record-result
+        name: Record Execution Outcome
+        if: always()
+        run: |
+          if [ "${{ steps.checkout.outcome }}" = "failure" ] || \
+             [ "${{ steps.setup-rust.outcome }}" = "failure" ] || \
+             [ "${{ steps.install-deny.outcome }}" = "failure" ] || \
+             [ "${{ steps.check-lockfile.outcome }}" = "failure" ] || \
+             [ "${{ steps.generate-lockfile.outcome }}" = "failure" ] || \
+             [ "${{ steps.verify-lockfile-unchanged.outcome }}" = "failure" ]; then
+            echo "failure_type=infrastructure_failure" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.scan.outcome }}" = "failure" ]; then
+            echo "failure_type=security_finding" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "failure_type=none" >> "$GITHUB_OUTPUT"
+            echo "scan_outcome=success" >> "$GITHUB_OUTPUT"
+          fi
+
+  security-regression-test:
+    name: Security Regression & Summary Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Run security regression suite
+        run: bash tests/security_scan_test.sh
+
+  security-summary:
+    name: Security Summary
+    needs: [gitleaks, cargo-audit, cargo-deny, security-regression-test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate Security Report & Summary
+        run: |
+          GITLEAKS_RES="${{ needs.gitleaks.result }}"
+          GITLEAKS_TYPE="${{ needs.gitleaks.outputs.failure_type }}"
+          AUDIT_RES="${{ needs.cargo-audit.result }}"
+          AUDIT_TYPE="${{ needs.cargo-audit.outputs.failure_type }}"
+          AUDIT_GRAPH="${{ needs.cargo-audit.outputs.audited_graph }}"
+          DENY_RES="${{ needs.cargo-deny.result }}"
+          DENY_TYPE="${{ needs.cargo-deny.outputs.failure_type }}"
+          DENY_GRAPH="${{ needs.cargo-deny.outputs.audited_graph }}"
+
+          FAILED=0
+
+          echo "## Security Gate Verification Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Control | Upstream Result | Failure Category | Diagnostic Guidance |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Gitleaks
+          if [ "$GITLEAKS_RES" = "success" ]; then
+            echo "| Secret Scan (Gitleaks) | ✅ PASSED | None | No secrets or sensitive tokens detected. |" \
+              >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$GITLEAKS_TYPE" = "infrastructure_failure" ]; then
+            FAILED=1
+            echo "| Secret Scan (Gitleaks) | ❌ INFRASTRUCTURE FAILURE | Tool Setup | Runner/checkout failed. |" \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            FAILED=1
+            MSG="| Secret Scan (Gitleaks) | ❌ SECURITY FINDING | Secret Leak | Credentials detected. Revoke secret. |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 2. Cargo Audit
+          AUDIT_GRAPH_NOTE=""
+          if [ -n "$AUDIT_GRAPH" ]; then
+            AUDIT_GRAPH_NOTE=" (Graph: ${AUDIT_GRAPH})"
+          fi
+          if [ "$AUDIT_RES" = "success" ]; then
+            MSG="| Vulnerability Audit (cargo-audit) | ✅ PASSED | None |"
+            MSG="${MSG} No vulnerability advisories detected.${AUDIT_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$AUDIT_RES" = "skipped" ]; then
+            MSG="| Vulnerability Audit (cargo-audit) | ⚪ DEFERRED | xtask quality gate |"
+            MSG="${MSG} Owned by xtask for this event. |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$AUDIT_TYPE" = "infrastructure_failure" ]; then
+            FAILED=1
+            MSG="| Vulnerability Audit (cargo-audit) | ❌ INFRASTRUCTURE FAILURE |"
+            MSG="${MSG} Tool Setup | Cargo audit failed.${AUDIT_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          else
+            FAILED=1
+            MSG="| Vulnerability Audit (cargo-audit) | ❌ SECURITY FINDING |"
+            MSG="${MSG} Vulnerable Dependency | Advisory found.${AUDIT_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 3. Cargo Deny
+          DENY_GRAPH_NOTE=""
+          if [ -n "$DENY_GRAPH" ]; then
+            DENY_GRAPH_NOTE=" (Graph: ${DENY_GRAPH})"
+          fi
+          if [ "$DENY_RES" = "success" ]; then
+            MSG="| Dependency Policy (cargo-deny) | ✅ PASSED | None |"
+            MSG="${MSG} All dependencies comply with policy.${DENY_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DENY_RES" = "skipped" ]; then
+            MSG="| Dependency Policy (cargo-deny) | ⚪ DEFERRED | xtask quality gate |"
+            MSG="${MSG} Owned by xtask for this event. |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$DENY_TYPE" = "infrastructure_failure" ]; then
+            FAILED=1
+            MSG="| Dependency Policy (cargo-deny) | ❌ INFRASTRUCTURE FAILURE |"
+            MSG="${MSG} Tool Setup | Cargo deny failed.${DENY_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          else
+            FAILED=1
+            MSG="| Dependency Policy (cargo-deny) | ❌ SECURITY FINDING |"
+            MSG="${MSG} Policy Violation | Banned crate/license.${DENY_GRAPH_NOTE} |"
+            echo "$MSG" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ $FAILED -ne 0 ]; then
+            echo "### ⚠️ Security Gate Status: FAILED" >> "$GITHUB_STEP_SUMMARY"
+            echo "One or more security controls failed. Check details above and uploaded artifacts." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          else
+            echo "### ✅ Security Gate Status: PASSED" >> "$GITHUB_STEP_SUMMARY"
+            echo "All security controls passed successfully." >> "$GITHUB_STEP_SUMMARY"
+          fi

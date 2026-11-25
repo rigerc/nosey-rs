@@ -1,0 +1,44 @@
+---
+name: Docs sync check
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'crates/**'
+      - 'src/**'
+      - 'README.md'
+      - 'agents-docs/**'
+      - 'Makefile'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'crates/**'
+      - 'src/**'
+      - 'README.md'
+      - 'agents-docs/**'
+      - 'Makefile'
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+      - name: Install doc tools
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b  # v2
+        with:
+          tool: cargo-sync-readme,cargo-doc2readme@0.4.0
+      - name: Check README sync
+        if: hashFiles('src/lib.rs') != ''
+        run: cargo sync-readme --check
+      - name: Regenerate pattern docs
+        run: make docs
+      - name: Assert no diff
+        run: git diff --exit-code docs/patterns/

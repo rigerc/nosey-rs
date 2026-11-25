@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# scripts/validate-agent-entrypoints.sh
+# Validates that assistant-specific entrypoints follow the 3-layer model.
+
+# Supported agents: Claude, Codex, OpenCode, Pi.
+# Codex, OpenCode and Pi read AGENTS.md and .agents/skills/ natively; only Claude
+# needs an adapter (CLAUDE.md importing AGENTS.md, plus the .claude/skills symlink).
+AGENT_FILES=("CLAUDE.md")
+SUB_ADAPTERS=()
+MAX_AGENTS_MD_LINES=80
+
+EXPECTED_REF="@AGENTS.md"
+EXIT_CODE=0
+
+echo "Checking agent entrypoints..."
+
+for file in "${AGENT_FILES[@]}" "${SUB_ADAPTERS[@]+"${SUB_ADAPTERS[@]}"}"; do
+    if [[ ! -f "$file" ]]; then
+        echo "❌ Error: Required agent adapter '$file' is missing."
+        EXIT_CODE=1
+        continue
+    fi
+
+    # Check if file contains @AGENTS.md
+    if grep -q "$EXPECTED_REF" "$file"; then
+        echo "✅ $file follows the reference model (contains $EXPECTED_REF)."
+    else
+        echo "❌ Error: $file is not a valid agent adapter."
+        echo "Expected file to contain: '$EXPECTED_REF'"
+        EXIT_CODE=1
+    fi
+
+done
+
+# Check AGENTS.md line count
+AGENTS_LOC=$(wc -l < AGENTS.md)
+if [[ "$AGENTS_LOC" -le "$MAX_AGENTS_MD_LINES" ]]; then
+    echo "✅ AGENTS.md length ($AGENTS_LOC) is within the $MAX_AGENTS_MD_LINES LOC limit."
+else
+    echo "❌ Error: AGENTS.md is too long ($AGENTS_LOC lines). Must be <= $MAX_AGENTS_MD_LINES."
+    EXIT_CODE=1
+fi
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    echo "All agent entrypoints are valid."
+else
+    echo "Validation failed."
+fi
+
+# Return exit code
+(( EXIT_CODE == 0 )) || false

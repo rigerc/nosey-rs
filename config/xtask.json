@@ -1,0 +1,214 @@
+{
+  "default_tier": "pull-request",
+  "env_var_name": "XTASK_TIER",
+  "lint_thresholds": {
+    "clippy_warnings_as_errors": true,
+    "max_lines_per_file": 500
+  },
+  "tiers": {
+    "protected-branch": {
+      "checks": [
+        "LocLimits",
+        "Fmt",
+        "Clippy",
+        "Build",
+        "Test",
+        "DocTest",
+        "Doc",
+        "Audit",
+        "Deny",
+        "Machete",
+        "Msrv",
+        "ShellCheck",
+        "MarkdownLint",
+        "YamlLint",
+        "SkillValidation",
+        "SkillEvals",
+        "PrivacyCheck",
+        "SecretScan",
+        "WorkflowValidation",
+        "ActionLint"
+      ],
+      "required_checks": [
+        "Audit",
+        "Deny",
+        "Machete",
+        "Msrv",
+        "ShellCheck",
+        "MarkdownLint",
+        "YamlLint",
+        "WorkflowValidation",
+        "ActionLint",
+        "SecretScan",
+        "Doc"
+      ]
+    },
+    "pull-request": {
+      "checks": [
+        "LocLimits",
+        "Fmt",
+        "Clippy",
+        "Build",
+        "Test",
+        "DocTest",
+        "Doc",
+        "Audit",
+        "Deny",
+        "Msrv",
+        "ShellCheck",
+        "MarkdownLint",
+        "YamlLint",
+        "SkillValidation",
+        "SkillEvals",
+        "PrivacyCheck",
+        "SecretScan",
+        "WorkflowValidation",
+        "ActionLint"
+      ],
+      "required_checks": [
+        "Audit",
+        "Deny",
+        "Msrv",
+        "ShellCheck",
+        "MarkdownLint",
+        "YamlLint",
+        "WorkflowValidation",
+        "ActionLint",
+        "SecretScan"
+      ]
+    },
+    "release": {
+      "checks": [
+        "Clippy",
+        "Build",
+        "Test",
+        "DocTest",
+        "Doc",
+        "Audit",
+        "Deny",
+        "Machete",
+        "Msrv",
+        "WorkflowValidation",
+        "ActionLint",
+        "YamlLint",
+        "PrivacyCheck",
+        "SecretScan"
+      ],
+      "required_checks": [
+        "Audit",
+        "Deny",
+        "Machete",
+        "Msrv",
+        "WorkflowValidation",
+        "ActionLint",
+        "YamlLint",
+        "SecretScan",
+        "Doc"
+      ]
+    },
+    "scheduled": {
+      "checks": [
+        "SkillValidation",
+        "AdrCompliance",
+        "SkillEvals",
+        "LlmContext",
+        "Clippy",
+        "Test",
+        "Audit",
+        "Deny",
+        "Machete",
+        "Msrv"
+      ]
+    }
+  },
+  "when_changed": {
+    "ActionLint": [
+      ".github/workflows/*.yml",
+      ".github/actions/**"
+    ],
+    "Audit": [
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "deny.toml",
+      ".cargo/audit.toml"
+    ],
+    "Build": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "Clippy": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "Deny": [
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "deny.toml"
+    ],
+    "Doc": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "DocTest": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "Fmt": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "Machete": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock"
+    ],
+    "MarkdownLint": [
+      "**/*.md"
+    ],
+    "Msrv": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml",
+      "scripts/audit-msrv.sh"
+    ],
+    "ShellCheck": [
+      "scripts/**/*.sh",
+      "**/*.sh"
+    ],
+    "SkillEvals": [
+      ".agents/skills/**",
+      "scripts/run-evals.sh"
+    ],
+    "SkillValidation": [
+      ".agents/skills/**",
+      ".agents/SKILLS.md",
+      "scripts/validate-skills.sh",
+      ".claude/skills"
+    ],
+    "Test": [
+      "**/*.rs",
+      "**/Cargo.toml",
+      "**/Cargo.lock",
+      "rust-toolchain.toml"
+    ],
+    "WorkflowValidation": [
+      ".github/workflows/*.yml",
+      "scripts/validate-workflows.sh"
+    ],
+    "YamlLint": [
+      "**/*.yml",
+      "**/*.yaml"
+    ]
+  }
+}
