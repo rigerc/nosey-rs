@@ -17,14 +17,13 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | Nosey-9 internal/detection/engine.go | Per-scope detection, coverage/unknown | Aggregate project by design; incomplete/cancelled/failed preserved |
 | SDK ai-catalog, trust, validate | Standard model, strict parse, semantic validation | Integrated against inspected signatures; original-byte verify and failed-assertion rejection added; compile not run |
 | SDK ai-catalog-discover | Discovery/fetch | SDK discover_with, restricted direct HTTPS, reviewed identity and explicit approval/refresh added; native network tests and global settings wiring outstanding |
+| what-stack `aa79257` src/config/files.rs | bounded regular-file reads and nonblocking Unix opens | Adapted to rooted descriptor-relative opens, no symlink traversal, hard byte cap and explicit failure. |
+| what-stack src/config/rules.rs, src/config/python.rs | filename, extension and dependency heuristics | Translated supported positive predicates to a candidate fixture registry; no runtime dependency or first-match precedence; compound/source/import and runtime-only conditions deferred. |
 
 Kitter is a selective source reference, not a parity target. Validate adapted behavior in Nosey; Nosey-9 detection parity and SDK requirements are unchanged. No successful build is claimed. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
 
 See [Kitter integration baseline](kitter-integration-baseline.md) for the archive tree verification, exact safety blockers and baseline commands.
 
 Saved-scan freshness fingerprints are independent of mapping and priority-only changes; removal suggestions require a current complete scan. Explore search covers five implemented entity kinds (skills, technologies, rules, mappings, combinations). No production connectivity or global configuration UI is wired yet. External executable adapters remain fail-closed.
-
-| what-stack `aa79257` src/config/files.rs | bounded regular-file reads and nonblocking Unix opens | Adapted to rooted descriptor-relative opens, no symlink traversal, hard byte cap and explicit failure. |
-| what-stack src/config/rules.rs, src/config/python.rs | filename, extension and dependency heuristics | Translated supported positive predicates to a candidate fixture registry; no runtime dependency or first-match precedence; compound/source/import and runtime-only conditions deferred. |
 
 See [what-stack selective reuse](what-stack-source-reuse.md).

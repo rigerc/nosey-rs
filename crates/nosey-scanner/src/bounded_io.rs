@@ -29,7 +29,7 @@ impl RootReader {
 
     #[cfg(unix)]
     fn open(&self, relative: &Path) -> io::Result<File> {
-        use rustix::fs::{Mode, OFlags, openat};
+        use rustix::fs::{AtFlags, FileType, Mode, OFlags, openat, statat};
         use std::path::Component;
         let mut components = relative.components().peekable();
         let mut parent = rustix::io::dup(&self.root)?;
@@ -41,6 +41,12 @@ impl RootReader {
                 parent = openat(&parent, name, OFlags::RDONLY | OFlags::DIRECTORY |
                     OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())?;
             } else {
+                // Reject known nonregular entries before opening, then
+                // check the actual handle again to catch substitutions.
+                let stat = statat(&parent, name, AtFlags::SYMLINK_NOFOLLOW)?;
+                if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "nonregular file"));
+                }
                 // Nonblocking prevents a substituted FIFO from blocking the
                 // scan. Verify type on this exact handle before reading.
                 let fd = openat(&parent, name, OFlags::RDONLY | OFlags::NOFOLLOW |
