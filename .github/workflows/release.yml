@@ -82,7 +82,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
       - uses: ./.github/actions/setup-rust
       - name: Install verification tooling
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b  # v2
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2
         with:
           tool: cargo-nextest,cargo-audit,cargo-deny,cargo-machete
       - name: Install shellcheck, yamllint, and markdownlint
@@ -187,7 +187,7 @@ jobs:
         run: |
           ${{ matrix.packages_install }}
       - name: Install cargo-cyclonedx
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b  # v2
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2
         with:
           tool: cargo-cyclonedx
       - name: Build artifacts
