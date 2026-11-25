@@ -32,3 +32,8 @@ rules and global directory exclusion policy.
 Central library and install-preview/revalidation patterns adapted from Kitter
 v0.2.6 (Apache-2.0), src/library.rs and src/project/install.rs. Modified for
 explicit fixture import, no-replace linking and journaled ownership.
+
+Development-only rust-crate-discovery agent skill from full-stack-skills/rust-skills,
+Apache-2.0, upstream revision b8a6af74af28ee86b8cbbbc3075cde0b31a5155e. All ten uploaded source files match
+upstream Git blobs. License is retained in .agents/skills/rust-crate-discovery/LICENSE.
+Nosey-specific usage guidance and evaluator safety fixes are documented alongside it.

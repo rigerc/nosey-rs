@@ -1,0 +1,11 @@
+# Nosey dependency review
+
+Imported from the maintainer-supplied archive, SHA-256 4b9aaf8d7d34ace4fe40d328802c9f2052fef89e232fa5c12c685646aef78fb2. The ten original Git blob hashes matched full-stack-skills/rust-skills at b8a6af74af28ee86b8cbbbc3075cde0b31a5155e. The Apache-2.0 license is included. SKILL.md and the evaluator were deliberately adapted after matching the originals.
+
+The evaluator weights adoption 30, maintenance 25, documentation 15, maturity 15, community 10, license 5. Use the score only for comparative health. The original evaluator's RustSec scraper conflated errors with no advisories, and grade C could bypass its blocker (plural wording also confused the substring check). The Nosey variant records explicit lookup status, blocks review for package advisory leads at every grade, and treats unknown/skipped checks as caution. Historical advisories are not necessarily applicable to a chosen version. The HTML parser is heuristic; it is not a version-aware advisory DB client.
+
+Other limitations remain: docs.rs metadata reachability does not prove a successful build, GitHub counters may be missing or rate-limited, the permissive-license substring heuristic does not evaluate SPDX AND/OR expressions, download counts are proxies, and Git-only SDKs cannot be scored from crates.io metadata alone. A high grade never authorizes adoption.
+
+Use public crate names only. Compare standard library and existing dependencies before adding a new crate. Check actual API, MSRV, feature set, resolved transitives, repository activity, SPDX expression and notices, exact version advisories and relevant upstream release notes. Check safe behavior for untrusted input, cancellation, resource bounds and Linux packaging. Run `cargo metadata --locked`, `cargo tree --locked -e features`, `cargo deny check`, `cargo audit` and focused integration tests against a regenerated lockfile. Do not suppress advisories to make checks pass.
+
+Regression checks (no network): `python3 -m unittest discover -s .agents/skills/rust-crate-discovery/scripts -p 'test_*.py'`. Full evaluation requires outbound network; record failures as unknown. For dependency review details see [the Phase 4 audit](../../../../docs/dependency-review-phase4.md).

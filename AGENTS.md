@@ -26,7 +26,7 @@ Details on tooling, tiers, setup and release handling: `agents-docs/reference.md
 - **Errors:** `thiserror` in libraries, `anyhow` in binaries. No `unwrap()` in libraries.
 - **Async:** `tokio` only when needed (CLI: `current_thread`); offload blocking work with `spawn_blocking`, bound concurrency, never hold locks across `.await`. See the `tokio-performance` skill.
 - **Config:** `#[serde(deny_unknown_fields)]`; bounded reads (`is_file()` + `file.take(limit)`); reject control chars; bound numeric fields.
-- **Dependencies:** versions in `[workspace.dependencies]` with caret ranges.
+- **Dependencies:** versions in `[workspace.dependencies]` with caret ranges. Before adopting a new external crate, consult `.agents/skills/rust-crate-discovery/SKILL.md` and its Nosey-specific review guidance. Document fit, alternatives, maintenance, license, exact-version advisories, MSRV and enabled/transitive features. A health grade is not approval; unavailable metadata is unknown, not clean. Retain `cargo deny` and lockfile-based `cargo audit` as the post-adoption gates.
 - **Secrets / portability:** never hardcode secrets, project name, repo URL or author; use named constants, not magic numbers.
 - **Size & docs:** max 500 LOC per source file; `///` docs on all public items.
 - **Tests:** test-first. Snapshot changes are behavior changes: review with `cargo insta review`, never accept just to go green.
