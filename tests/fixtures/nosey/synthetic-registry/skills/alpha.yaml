@@ -1,0 +1,4 @@
+identifier: urn:example:skill:alpha
+type: application/agent-skills+md
+displayName: Fixture alpha
+url: https://example.org/alpha/SKILL.md

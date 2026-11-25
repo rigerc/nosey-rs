@@ -1,0 +1,4 @@
+identifier: urn:example:skill:combined
+type: application/agent-skills+md
+displayName: Fixture combined
+url: https://example.org/combined/SKILL.md

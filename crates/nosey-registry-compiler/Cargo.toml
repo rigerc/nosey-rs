@@ -1,0 +1,21 @@
+[package]
+name = "nosey-registry-compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true }
+nosey-registry = { path = "../nosey-registry" }
+nosey-scanner = { path = "../nosey-scanner" }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "nosey-registry"
+path = "src/main.rs"

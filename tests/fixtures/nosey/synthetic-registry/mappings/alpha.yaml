@@ -1,0 +1,4 @@
+id: synthetic:mapping.alpha
+technology: synthetic:technology.alpha
+skills:
+  - urn:example:skill:alpha

@@ -1,0 +1,5 @@
+id: synthetic:rule.beta
+technology: synthetic:technology.beta
+kind: dependency
+ecosystem: npm
+name: fixture-beta

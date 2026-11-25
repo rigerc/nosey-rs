@@ -1,0 +1,19 @@
+[package]
+name = "nosey-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tempfile = { workspace = true }
+nosey-registry = { path = "../nosey-registry" }
+nosey-scanner = { path = "../nosey-scanner" }
+nosey-recommendation = { path = "../nosey-recommendation" }

@@ -1,0 +1,5 @@
+id: synthetic:rule.alpha
+technology: synthetic:technology.alpha
+kind: dependency
+ecosystem: npm
+name: fixture-alpha

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nosey intelligence development subset",
+  "type": "object",
+  "required": ["schemaVersion", "registryId"],
+  "properties": {
+    "schemaVersion": {"type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$"},
+    "registryId": {"type": "string", "minLength": 1},
+    "technologies": {"type": "array", "items": {"type": "object", "required": ["id", "name"]}},
+    "rules": {"type": "array", "items": {"type": "object", "required": ["id", "technology", "kind"], "properties": {"kind": {"enum": ["file", "extension", "content", "dotenv", "dependency", "mcp_package", "detector"]}}}},
+    "mappings": {"type": "array", "items": {"type": "object", "required": ["id", "technology", "skills"]}},
+    "combinations": {"type": "array", "items": {"type": "object", "required": ["id", "technologies", "skills"]}}
+  }
+}

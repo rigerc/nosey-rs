@@ -1,0 +1,4 @@
+id: synthetic:mapping.beta
+technology: synthetic:technology.beta
+skills:
+  - urn:example:skill:beta
