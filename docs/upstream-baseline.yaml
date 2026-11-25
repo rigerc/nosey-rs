@@ -12,6 +12,8 @@ upstreams:
     verified_tree: 2850d10f64ec6b3e1ff0f250666e8cc90cb60b25
     source_archive_verified: true
     tracked_files: 284
+    role: selective_source_reference
+    standalone_build_required: false
     build: not_run
   nosey9:
     repository: https://github.com/rigerc/nosey-9

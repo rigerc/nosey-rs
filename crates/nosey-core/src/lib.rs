@@ -6,7 +6,8 @@ use serde::{Serialize,Deserialize};
 use std::{collections::{BTreeMap,BTreeSet},fs,io::{Read,Write},path::{Path,PathBuf},sync::atomic::AtomicBool};
 use thiserror::Error;
 
-pub mod kitter_audit;
+/// Native read-only project target discovery.
+pub mod skill_discovery;
 mod project_activity;
 
 /// Central state failures.
@@ -15,14 +16,14 @@ pub enum Error{/// Filesystem failure.
     #[error("state I/O: {0}")] Io(#[from]std::io::Error),/// Invalid state data.
     #[error("state data: {0}")] Json(#[from]serde_json::Error),/// Unsafe or invalid input.
     #[error("{0}")] Invalid(String)}
-/// Project record keyed by its canonical absolute directory, pending Kitter ID integration.
+/// Project record keyed by its canonical absolute directory, pending production domain ID integration.
 #[derive(Debug,Default,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Project{/// Saved latest usable scan.
     pub scan:Option<ScanResult>,/// Latest attempted scan coverage.
     pub last_attempt:Option<Completeness>,/// Persistent dismissals keyed by canonical skill identity.
     pub dismissed:BTreeSet<String>}
-/// Prototype central state; not yet a replacement for Kitter persistence.
+/// Prototype Nosey-owned central state; production persistence is outstanding.
 #[derive(Debug,Default,Serialize,Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct State{/// Registered project directories.

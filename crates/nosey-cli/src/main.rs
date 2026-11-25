@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use nosey_core::{State, kitter_audit::ProjectAudit};
+use nosey_core::{State, skill_discovery::inspect_target};
 use nosey_registry::{CatalogIndex, RegistryInput, load_snapshot};
 use nosey_scanner::Settings;
 use std::{
@@ -29,11 +29,11 @@ enum Command {
     Unregister { root: PathBuf },
     /// List registered projects.
     List,
-    /// Read a previously exported Kitter audit without adopting any skill.
-    AuditKitter {
+    /// Inspect direct skill candidates in an explicit project-relative target.
+    InspectTarget {
         root: PathBuf,
         #[arg(long)]
-        snapshot: PathBuf,
+        target: PathBuf,
     },
     /// Run the synthetic local-registry development flow.
     ScanFixture {
@@ -68,8 +68,8 @@ fn main() -> Result<()> {
                 println!("{}", path.display());
             }
         }
-        Command::AuditKitter { root, snapshot } => {
-            let audit = ProjectAudit::load(&state, &root, &snapshot)?;
+        Command::InspectTarget { root, target } => {
+            let audit = inspect_target(&state, &root, &target)?;
             println!("{}", serde_json::to_string_pretty(&audit)?);
         }
         Command::ScanFixture { root, catalog, registry_id, extension, approve_fixture } => {
