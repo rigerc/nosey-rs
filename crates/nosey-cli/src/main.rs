@@ -4,6 +4,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nosey_core::{State, skill_discovery::inspect_target};
+#[cfg(target_os = "linux")]
+use nosey_core::{library::Library, changes::{InstallReason, InstallPreview}};
 use nosey_registry::{CatalogIndex, RegistryInput, load_snapshot};
 use nosey_scanner::Settings;
 use std::{
@@ -35,6 +37,18 @@ enum Command {
         #[arg(long)]
         target: PathBuf,
     },
+    /// Stage an explicitly selected local fixture skill (not a trusted registry entry).
+    #[cfg(target_os = "linux")]
+    ImportFixture { library: PathBuf, id: String, source: PathBuf, #[arg(long)] approve_fixture: bool },
+    /// Preview a link from a local fixture into an existing target.
+    #[cfg(target_os = "linux")]
+    PreviewInstall { library: PathBuf, root: PathBuf, target: PathBuf, id: String },
+    /// Apply only the exact previously displayed fingerprint.
+    #[cfg(target_os = "linux")]
+    ApplyInstall { library: PathBuf, root: PathBuf, target: PathBuf, id: String, #[arg(long)] approve: String },
+    /// Audit managed, pending and detached link records without changing them.
+    #[cfg(target_os = "linux")]
+    AuditLinks { library: PathBuf },
     /// Run the synthetic local-registry development flow.
     ScanFixture {
         root: PathBuf,
@@ -74,6 +88,30 @@ fn main() -> Result<()> {
         Command::InspectTarget { root, target } => {
             let audit = inspect_target(&state, &root, &target)?;
             println!("{}", serde_json::to_string_pretty(&audit)?);
+        }
+        #[cfg(target_os = "linux")]
+        Command::ImportFixture { library, id, source, approve_fixture } => {
+            anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
+            let library = Library::open(&state, &library)?;
+            println!("{}", serde_json::to_string_pretty(&library.import_fixture(&id, &source)?)?);
+        }
+        #[cfg(target_os = "linux")]
+        Command::PreviewInstall { library, root, target, id } => {
+            let library = Library::open(&state, &library)?;
+            let preview = library.preview(&state, &root, &target, &id, InstallReason::Manual)?;
+            println!("{}", serde_json::to_string_pretty(&preview)?);
+        }
+        #[cfg(target_os = "linux")]
+        Command::ApplyInstall { library, root, target, id, approve } => {
+            let library = Library::open(&state, &library)?;
+            let preview: InstallPreview = library.preview(&state, &root, &target, &id, InstallReason::Manual)?;
+            anyhow::ensure!(preview.fingerprint == approve, "stale approval; review preview again");
+            println!("{}", serde_json::to_string_pretty(&library.apply(&state, &preview)?)?);
+        }
+        #[cfg(target_os = "linux")]
+        Command::AuditLinks { library } => {
+            let library = Library::open(&state, &library)?;
+            println!("{}", serde_json::to_string_pretty(&library.audit_links(&state)?)?);
         }
         Command::ScanFixture { root, catalog, registry_id, extension, approve_fixture, mcp } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");

@@ -4,8 +4,8 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 
 | Upstream path | Observed mechanism | Destination / status |
 |---|---|---|
-| Kitter src/library.rs, src/source/* | Library and acquisition | Not imported; source inventory only |
-| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Project activity and non-destructive unregister ported; native direct-target discovery added; installer remains a Nosey feature |
+| Kitter src/library.rs, src/source/* | Library and acquisition | Local fixture library and staged active-copy publication added; remote acquisition remains outstanding |
+| Kitter src/project.rs, src/project/install.rs, src/directory_link.rs | Project/link management | Project activity and non-destructive unregister ported; native direct-target discovery added; explicit install preview, no-replace linking and recovery journal added |
 | Kitter src/effective_skills/*, src/agent_plugins/* | Effective target and plugins | Native direct-child discovery and link inspection adapted; agent-specific discovery and canonical coverage outstanding |
 | Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Project activity ported into prototype state; Nosey-owned storage design; no upstream format compatibility required |
 | Kitter src/ui/*, src/bin/kitter-desktop.rs, src/assets.rs | GPUI | Reference only; reuse components selectively for Nosey |

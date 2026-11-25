@@ -32,6 +32,7 @@ Run `bash scripts/generate-skills-md.sh` to regenerate after adding or modifying
 | `privacy-first` | [skills/privacy-first/SKILL.md](skills/privacy-first/SKILL.md) | Prevent email addresses and personal data from entering the codebase. |
 | `release-rust` | [skills/release-rust/SKILL.md](skills/release-rust/SKILL.md) | Create and publish a new release of the Rust project. Handles version bumping, |
 | `reviewing-pull-requests` | [skills/reviewing-pull-requests/SKILL.md](skills/reviewing-pull-requests/SKILL.md) | Review GitHub pull requests and triage open PRs and issues: classify blast |
+| `rust-crate-discovery` | [skills/rust-crate-discovery/SKILL.md](skills/rust-crate-discovery/SKILL.md) | Discover, evaluate, score, and compare Rust crates for adoption — search crates.io, fetch metadata f |
 | `secret-lint` | [skills/secret-lint/SKILL.md](skills/secret-lint/SKILL.md) | Automated secret scanning using secretlint to prevent credential leaks. |
 | `test-rust` | [skills/test-rust/SKILL.md](skills/test-rust/SKILL.md) | Run the complete test suite for a Rust project including unit tests, |
 | `tokio-performance` | [skills/tokio-performance/SKILL.md](skills/tokio-performance/SKILL.md) | Audit and design Tokio async Rust systems for throughput, latency, fairness, contention, blocking, a |
