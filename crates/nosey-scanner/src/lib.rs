@@ -5,6 +5,8 @@ mod matcher;
 mod jsonc;
 mod mcp;
 mod yaml_providers;
+mod terraform;
+mod pattern;
 use nosey_registry::{CatalogIndex, Rule};
 use serde::{Deserialize, Serialize};
 use std::{collections::{BTreeMap,BTreeSet}, fs, io::Read, path::{Path,PathBuf}, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
@@ -65,8 +67,12 @@ pub struct ScanResult {
 /// # Errors
 /// Serialization errors are propagated.
 pub fn fingerprints(index:&CatalogIndex,settings:&Settings)->Result<(String,String),serde_json::Error>{
-    let rules:Vec<_>=index.intelligence.iter().map(|(_,i)|(&i.registry_id,&i.technologies,&i.rules)).collect();
-    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&rules)?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
+    let mut rules:Vec<_>=index.intelligence.iter().map(|(_,i)|{
+        let mut tech:Vec<_>=i.technologies.iter().collect();tech.sort_by(|a,b|a.id.cmp(&b.id));
+        let mut active:Vec<_>=i.rules.iter().filter(|r|!r.disabled).collect();active.sort_by(|a,b|a.id.cmp(&b.id));
+        (&i.registry_id,tech,active)
+    }).collect();rules.sort_by(|a,b|a.0.cmp(b.0));
+    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v2",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
 }
 fn mark(result:&mut ScanResult,code:&str){if result.completeness==Completeness::Complete{result.completeness=Completeness::Incomplete;} result.diagnostics.insert(code.into());}
 fn expired(start:Instant,settings:&Settings,cancel:&AtomicBool,result:&mut ScanResult)->bool{

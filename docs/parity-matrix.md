@@ -10,9 +10,9 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | Kitter src/preset/*, src/config.rs, src/data_location.rs | Existing persistence/presets | Project activity ported into prototype state; Nosey-owned storage design; no upstream format compatibility required |
 | Kitter src/ui/*, src/bin/kitter-desktop.rs, src/assets.rs | GPUI | Reference only; reuse components selectively for Nosey |
 | Kitter Cargo.toml, crates/ztracing-shim | GPUI git deps, optional desktop, shim | Lockfile and policy review outstanding |
-| Nosey-9 internal/detection/evaluate.go | file (glob/regex), extension, content, dotenv | Implemented subset; regex uses bounded Rust regex rather than ECMAScript regexp2; differences untested |
+| Nosey-9 internal/detection/evaluate.go | file (glob/regex), extension, content, dotenv | Implemented subset; bounded Rust regex with lookaround/backreference fallback; exact ECMAScript parity unverified |
 | Nosey-9 internal/detection/observe.go | npm, composer, cargo, python, go, ruby, hex, deno, docker | Partial providers implemented; JSONC and Compose added; exact Go/Ruby/Python parity and version persistence outstanding |
-| Nosey-9 internal/detection/providers.go | terraform, terraform.resource, githubAction, MCP, Compose, JSONC | Passive MCP, Compose, JSONC and GitHub Actions subset added; Terraform and exact fixture parity outstanding. YAML aliases/tags and malformed inputs mark incomplete. |
+| Nosey-9 internal/detection/providers.go | terraform, terraform.resource, githubAction, MCP, Compose, JSONC | Passive MCP, Compose, JSONC, GitHub Actions and HCL Terraform provider/resource detection added; exact fixture parity outstanding. YAML aliases/tags and malformed inputs mark incomplete. |
 | Nosey-9 internal/detection/adapters.go | Explicit approved/hash-pinned external adapters | Unavailable, never execute registry-provided programs |
 | Nosey-9 internal/detection/engine.go | Per-scope detection, coverage/unknown | Aggregate project by design; incomplete/cancelled/failed preserved |
 | SDK ai-catalog, trust, validate | Standard model, strict parse, semantic validation | Integrated against inspected signatures; compile not run |
