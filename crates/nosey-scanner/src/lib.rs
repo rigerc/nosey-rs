@@ -112,7 +112,7 @@ pub fn fingerprints(index:&CatalogIndex,settings:&Settings)->Result<(String,Stri
         let mut active:Vec<_>=i.rules.iter().filter(|r|!r.disabled).collect();active.sort_by(|a,b|a.id.cmp(&b.id));
         (&i.registry_id,tech,active)
     }).collect();rules.sort_by(|a,b|a.0.cmp(b.0));
-    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v4",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
+    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v5",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
 }
 fn mark(result:&mut ScanResult,code:&str){if result.completeness==Completeness::Complete{result.completeness=Completeness::Incomplete;} result.diagnostics.insert(code.into());}
 fn expired(start:Instant,settings:&Settings,cancel:&AtomicBool,result:&mut ScanResult)->bool{
@@ -132,9 +132,17 @@ pub fn scan(root:&Path,index:&CatalogIndex,settings:&Settings,cancel:&AtomicBool
     let rules:Vec<(&str,&Rule)>=index.intelligence.iter().flat_map(|(_,i)|i.rules.iter().filter(|r|!r.disabled).map(|r|(i.registry_id.as_str(),r))).collect();
     let mut compiled=Vec::new();for (registry,rule) in rules{if !index.technologies.contains(&rule.technology){mark(&mut result,"unresolved-technology");continue;}match matcher::Matcher::new(&rule.matcher,settings.mcp){Ok(m)=>compiled.push((registry,rule,m)),Err(code)=>mark(&mut result,code)}}
     let start=Instant::now();let mut count=0_usize;
+    let default_pruned=std::cell::Cell::new(false);
+    let custom_pruned=std::cell::Cell::new(false);
     let walker=WalkDir::new(root).follow_links(false).max_depth(settings.max_depth+1).sort_by_file_name().into_iter().filter_entry(|e|{
         if e.depth()==0{return true;}let path=e.path().strip_prefix(root).unwrap_or(e.path());
-        !e.file_name().to_str().is_some_and(|s|matches!(s,".git"|"node_modules"|"target"|".venv"|"dist"|"build"|"__pycache__"))&&!excludes.is_match(path)
+        // Preserve the prior built-in exclusions. Additional names from
+        // projectdetect apply only to directories, not similarly named files.
+        let built_in=e.file_name().to_str().is_some_and(|s|matches!(s,".git"|"node_modules"|"target"|".venv"|"dist"|"build"|"__pycache__"));
+        let additional=e.file_type().is_dir()&&e.file_name().to_str().is_some_and(|s|matches!(s,".tox"|".pytest_cache"|".mypy_cache"|".ruff_cache"|".gradle"|".terraform"|".swiftpm"|"zig-out"|"zig-cache"|".zig-cache"|".astro"|".gatsby"|".docusaurus"|".bundle"|".jekyll-cache"|".sass-cache"|"autom4te.cache"));
+        if built_in||additional {default_pruned.set(true);return false;}
+        if excludes.is_match(path){custom_pruned.set(true);return false;}
+        true
     });
     for item in walker {if expired(start,settings,cancel,&mut result){break;}count+=1;if count>100_000{mark(&mut result,"entry-limit");break;}
         let Ok(entry)=item else{mark(&mut result,"walk-error");continue;};if entry.depth()==0{continue;}if entry.depth()>settings.max_depth{mark(&mut result,"depth-limit");continue;}
@@ -147,5 +155,9 @@ pub fn scan(root:&Path,index:&CatalogIndex,settings:&Settings,cancel:&AtomicBool
         for (registry,rule,m) in &compiled {if expired(start,settings,cancel,&mut result){break;}match m.matches(path,entry.file_type().is_dir(),bytes.as_deref()){
             Ok(ids)=>{for observed in ids{result.technologies.entry(rule.technology.clone()).or_default().insert(Evidence{path:relative.to_path_buf(),registry:(*registry).to_owned(),rule:rule.id.clone(),identifier:observed.identifier,match_kind:Some(observed.kind),version:observed.version});}},Err(code)=>mark(&mut result,code)}}
     }
+    if default_pruned.get(){result.diagnostics.insert("default-exclusions-applied".into());}
+    if custom_pruned.get(){result.diagnostics.insert("custom-exclusions-applied".into());}
+    // Cancellation during the final entry or an empty tree is still visible.
+    expired(start,settings,cancel,&mut result);
     Ok(result)
 }

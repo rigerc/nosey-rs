@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.dotnet-5
+technology: what-stack-reference:technology.dotnet
+kind: file
+pathScope: basename
+pathRegex: '^(?i:Directory\.Packages\.props)$'

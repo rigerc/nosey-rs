@@ -19,6 +19,8 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | SDK ai-catalog-discover | Discovery/fetch | SDK discover_with, restricted direct HTTPS, reviewed identity and explicit approval/refresh added; native network tests and global settings wiring outstanding |
 | what-stack `aa79257` src/config/files.rs | bounded regular-file reads and nonblocking Unix opens | Adapted to rooted descriptor-relative opens, no symlink traversal, hard byte cap and explicit failure. |
 | what-stack src/config/rules.rs, src/config/python.rs | filename, extension and dependency heuristics | Translated supported positive predicates to a candidate fixture registry; no runtime dependency or first-match precedence; compound/source/import and runtime-only conditions deferred. |
+| projectdetect `6b75606` src/builtins.rs | project markers and build/cache names | 18 distinct additional candidate technologies, 42 rules and 5 nonduplicate .NET rules; reviewed directory exclusions only. |
+| projectdetect src/find.rs, src/indicator.rs | nested discovery, cancellation and indicator results | Regression scenarios adapted to existing Nosey traversal; no second walker, CEL or alternate registry. |
 
 Kitter is a selective source reference, not a parity target. Validate adapted behavior in Nosey; Nosey-9 detection parity and SDK requirements are unchanged. No successful build is claimed. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
 
@@ -27,3 +29,5 @@ See [Kitter integration baseline](kitter-integration-baseline.md) for the archiv
 Saved-scan freshness fingerprints are independent of mapping and priority-only changes; removal suggestions require a current complete scan. Explore search covers five implemented entity kinds (skills, technologies, rules, mappings, combinations). No production connectivity or global configuration UI is wired yet. External executable adapters remain fail-closed.
 
 See [what-stack selective reuse](what-stack-source-reuse.md).
+
+See [projectdetect selective reuse](projectdetect-source-reuse.md).

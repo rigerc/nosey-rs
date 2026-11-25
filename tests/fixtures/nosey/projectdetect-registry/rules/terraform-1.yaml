@@ -1,0 +1,4 @@
+id: projectdetect-reference:rule.terraform-1
+technology: projectdetect-reference:technology.terraform
+kind: extension
+extension: '.tf'

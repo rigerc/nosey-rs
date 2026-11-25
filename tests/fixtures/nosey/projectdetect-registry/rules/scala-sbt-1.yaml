@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.scala-sbt-1
+technology: projectdetect-reference:technology.scala-sbt
+kind: file
+pathScope: basename
+pathRegex: '^(?i:build\.sbt)$'

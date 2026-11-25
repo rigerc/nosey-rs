@@ -1,0 +1,7 @@
+schema_version: '1.0.0'
+ai_catalog_version: '1.0'
+id: projectdetect-reference
+intelligence_extension: org.example.nosey.intelligence
+host:
+  displayName: Projectdetect Reference Fixtures
+  identifier: did:example:projectdetect-reference

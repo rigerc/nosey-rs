@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.zig-2
+technology: projectdetect-reference:technology.zig
+kind: file
+pathScope: basename
+pathRegex: '^(?i:build\.zig\.zon)$'

@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.docusaurus-1
+technology: projectdetect-reference:technology.docusaurus
+kind: file
+pathScope: basename
+pathRegex: '^(?i:docusaurus\.config\.js)$'

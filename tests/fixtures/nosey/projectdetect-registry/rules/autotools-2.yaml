@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.autotools-2
+technology: projectdetect-reference:technology.autotools
+kind: file
+pathScope: basename
+pathRegex: '^(?i:configure\.in)$'

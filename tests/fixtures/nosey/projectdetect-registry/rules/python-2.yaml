@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.python-2
+technology: projectdetect-reference:technology.python
+kind: file
+pathScope: basename
+pathRegex: '^(?i:requirements\.txt)$'

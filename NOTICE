@@ -22,3 +22,9 @@ adapted from what-stack (ehsan18t/what-stack), MIT license,
 Copyright (c) 2026 Ehsan Khan, upstream commit aa792571b5829b50dda71644857532dd80e302b8.
 See licenses/what-stack-MIT.txt. Modified for Nosey's registry-driven aggregate
 scans and rooted file access.
+
+Candidate project markers and build/cache exclusion names adapted from
+projectdetect (richardwooding/projectdetect-rs), MIT license,
+Copyright (c) 2026 Richard Wooding, commit 6b756065e0cb74a2e121381afa7cead4c145b262.
+See licenses/projectdetect-MIT.txt. Modified for Nosey's aggregate registry
+rules and global directory exclusion policy.

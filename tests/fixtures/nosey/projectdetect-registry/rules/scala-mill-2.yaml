@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.scala-mill-2
+technology: projectdetect-reference:technology.scala-mill
+kind: file
+pathScope: basename
+pathRegex: '^(?i:build\.sc)$'
