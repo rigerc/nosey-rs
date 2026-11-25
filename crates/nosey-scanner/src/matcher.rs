@@ -15,7 +15,7 @@ impl Matcher {
         RuleKind::Content{glob:g,contains,regex:r,regex_flags}=>{let name=if !contains.is_empty(){Name::Literal(contains.clone())}else{if !regex_flags.is_empty()&&regex_flags!="i"{return Err("unsupported-regex-flags");}Name::Pattern(regex(r,regex_flags=="i")?)};Ok(Self::Content(glob(g)?,name))},
         RuleKind::Dotenv{glob:g,key,key_regex}=>Ok(Self::Dotenv(if g.is_empty(){None}else{Some(glob(g)?)},Name::new(key,key_regex)?)),
         RuleKind::Dependency{ecosystem,name,name_regex}=>{if !providers::supported(ecosystem){return Err("unsupported-provider");}Ok(Self::Dependency(ecosystem.clone(),Name::new(name,name_regex)?))},
-        RuleKind::McpPackage{..} if !mcp=>Err("mcp-disabled"),RuleKind::McpPackage{..}=>Err("mcp-provider-unimplemented"),
+        RuleKind::McpPackage{..} if !mcp=>Err("mcp-disabled"),RuleKind::McpPackage{name,name_regex}=>Ok(Self::Dependency("mcp".into(),Name::new(name,name_regex)?)),
         RuleKind::Detector{..}=>Err("external-detector-unavailable"),_=>Err("unsupported-rule")}}
     fn base(path:&str)->&str{path.rsplit('/').next().unwrap_or(path)}
     fn dotenv(g:Option<&GlobMatcher>,path:&str)->bool{g.map_or_else(||{let b=Self::base(path);b.starts_with(".env")&&!b.contains("example")&&!b.contains("sample")},|x|x.is_match(path))}

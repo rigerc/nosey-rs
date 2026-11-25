@@ -12,3 +12,7 @@ Apache License 2.0, upstream commit 19711db044aabfa9846a65aaee693276d65af5c2.
 Modified for Nosey's explicit registration, non-destructive unregistration,
 bounded read-only discovery and unverified link classification.
 See licenses/kitter-APACHE-2.0.txt.
+
+Detection provider algorithms adapted from Nosey-9 (rigerc/nosey-9),
+MIT license, commit dca90b0528f01bf7962c72aae27fc2ab3492c3ac.
+See licenses/nosey-9-MIT.txt. Modified for Rust and bounded passive scanning.

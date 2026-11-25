@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 mod providers;
 mod matcher;
+mod jsonc;
+mod mcp;
+mod yaml_providers;
 use nosey_registry::{CatalogIndex, Rule};
 use serde::{Deserialize, Serialize};
 use std::{collections::{BTreeMap,BTreeSet}, fs, io::Read, path::{Path,PathBuf}, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
