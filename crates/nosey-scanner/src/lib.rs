@@ -7,6 +7,7 @@ mod mcp;
 mod yaml_providers;
 mod terraform;
 mod pattern;
+mod versions;
 use nosey_registry::{CatalogIndex, Rule};
 use serde::{Deserialize, Serialize};
 use std::{collections::{BTreeMap,BTreeSet}, fs, io::Read, path::{Path,PathBuf}, sync::atomic::{AtomicBool,Ordering}, time::{Duration,Instant}};
@@ -37,6 +38,40 @@ pub struct Settings {
     pub mcp: bool,
 }
 impl Default for Settings {fn default()->Self{Self{max_depth:20,max_bytes:5*1024*1024,timeout_secs:60,exclusions:Vec::new(),mcp:false}}}
+/// Evidence kind from an existing Nosey-9 rule.
+#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Serialize,Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum MatchKind {
+    /// Path rule.
+    File,
+    /// File suffix.
+    Extension,
+    /// Content predicate (no raw content).
+    Content,
+    /// Dotenv key predicate (no values).
+    Dotenv,
+    /// Manifest dependency.
+    Dependency,
+    /// Passive MCP package.
+    McpPackage,
+}
+/// Interpretation of a version observation.
+#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Serialize,Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum VersionKind {
+    /// Constraint or selected minimum declared in a manifest.
+    ManifestConstraint,
+    /// Verified resolved version from a lockfile or installed metadata.
+    Resolved,
+}
+/// A typed version observation; never inferred as a project-wide version.
+#[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord,Serialize,Deserialize)]
+pub struct VersionObservation {
+    /// Meaning of the value.
+    pub kind: VersionKind,
+    /// Bounded numeric version/constraint text.
+    pub value: String,
+}
 /// Evidence does not include raw contents, environment values or arbitrary snippets.
 #[derive(Debug,Clone,PartialEq,Eq,PartialOrd,Ord,Serialize,Deserialize)]
 pub struct Evidence {
@@ -48,6 +83,10 @@ pub struct Evidence {
     pub rule: String,
     /// Optional observed identifier, omitted for content and dotenv values.
     pub identifier: Option<String>,
+    /// Match kind; absent in legacy saved scan records.
+    #[serde(default)] pub match_kind: Option<MatchKind>,
+    /// Version information, if a safe manifest constraint was observed.
+    #[serde(default)] pub version: Option<VersionObservation>,
 }
 /// Project-wide aggregated scan result.
 #[derive(Debug,Clone,Serialize,Deserialize)]
@@ -72,7 +111,7 @@ pub fn fingerprints(index:&CatalogIndex,settings:&Settings)->Result<(String,Stri
         let mut active:Vec<_>=i.rules.iter().filter(|r|!r.disabled).collect();active.sort_by(|a,b|a.id.cmp(&b.id));
         (&i.registry_id,tech,active)
     }).collect();rules.sort_by(|a,b|a.0.cmp(b.0));
-    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v2",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
+    Ok((format!("{:x}",Sha256::digest(serde_json::to_vec(&("v3",rules))?)),format!("{:x}",Sha256::digest(serde_json::to_vec(settings)?))))
 }
 fn mark(result:&mut ScanResult,code:&str){if result.completeness==Completeness::Complete{result.completeness=Completeness::Incomplete;} result.diagnostics.insert(code.into());}
 fn expired(start:Instant,settings:&Settings,cancel:&AtomicBool,result:&mut ScanResult)->bool{
@@ -104,7 +143,7 @@ pub fn scan(root:&Path,index:&CatalogIndex,settings:&Settings,cancel:&AtomicBool
         let mut bytes=None;
         if needs{let read=(||->std::io::Result<Vec<u8>>{let mut data=Vec::new();fs::File::open(entry.path())?.take(settings.max_bytes as u64+1).read_to_end(&mut data)?;Ok(data)})();match read{Ok(data) if data.len()<=settings.max_bytes=>bytes=Some(data),_=>mark(&mut result,"file-read-or-size-limit")}}
         for (registry,rule,m) in &compiled {if expired(start,settings,cancel,&mut result){break;}match m.matches(path,entry.file_type().is_dir(),bytes.as_deref()){
-            Ok(ids)=>{for identifier in ids{result.technologies.entry(rule.technology.clone()).or_default().insert(Evidence{path:relative.to_path_buf(),registry:(*registry).to_owned(),rule:rule.id.clone(),identifier});}},Err(code)=>mark(&mut result,code)}}
+            Ok(ids)=>{for observed in ids{result.technologies.entry(rule.technology.clone()).or_default().insert(Evidence{path:relative.to_path_buf(),registry:(*registry).to_owned(),rule:rule.id.clone(),identifier:observed.identifier,match_kind:Some(observed.kind),version:observed.version});}},Err(code)=>mark(&mut result,code)}}
     }
     Ok(result)
 }

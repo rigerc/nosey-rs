@@ -95,7 +95,7 @@ cognitive_complexity = "allow"
 
 # ─── Workspace-wide dependency versions ───────────────────────────────────────
 [workspace.dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 anyhow = "1"
@@ -106,6 +106,8 @@ tempfile = "3"
 regex = "1"
 fancy-regex = "=0.19.2"
 hcl-rs = "=0.19.8"
+url = "2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
 globset = "0.4"
 walkdir = "2"
 ai-catalog = { git = "https://github.com/Agent-Card/ai-catalog-rust", rev = "920ef70e1e5a602e142137f9ea6a1135fedbf110" }

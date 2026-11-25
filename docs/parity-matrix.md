@@ -15,8 +15,8 @@ Sources: [Kitter pinned candidate](https://github.com/what1f/kitter/tree/19711db
 | Nosey-9 internal/detection/providers.go | terraform, terraform.resource, githubAction, MCP, Compose, JSONC | Passive MCP, Compose, JSONC, GitHub Actions and HCL Terraform provider/resource detection added; exact fixture parity outstanding. YAML aliases/tags and malformed inputs mark incomplete. |
 | Nosey-9 internal/detection/adapters.go | Explicit approved/hash-pinned external adapters | Unavailable, never execute registry-provided programs |
 | Nosey-9 internal/detection/engine.go | Per-scope detection, coverage/unknown | Aggregate project by design; incomplete/cancelled/failed preserved |
-| SDK ai-catalog, trust, validate | Standard model, strict parse, semantic validation | Integrated against inspected signatures; compile not run |
-| SDK ai-catalog-discover | Discovery/fetch | Not integrated |
+| SDK ai-catalog, trust, validate | Standard model, strict parse, semantic validation | Integrated against inspected signatures; original-byte verify and failed-assertion rejection added; compile not run |
+| SDK ai-catalog-discover | Discovery/fetch | SDK discover_with, restricted direct HTTPS, reviewed identity and explicit approval/refresh added; native network tests and global settings wiring outstanding |
 
 Kitter is a selective source reference, not a parity target. Validate adapted behavior in Nosey; Nosey-9 detection parity and SDK requirements are unchanged. No successful build is claimed. The original registry is not copied. All fixtures are synthetic. No production namespace or official signer selected.
 

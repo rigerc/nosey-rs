@@ -2,7 +2,17 @@
 use globset::{GlobBuilder,GlobMatcher};
 use nosey_registry::RuleKind;
 use crate::pattern::Pattern;
-use crate::providers;
+use crate::{providers, versions, MatchKind, VersionObservation};
+
+pub(crate) struct Observation {
+    pub(crate) kind: MatchKind,
+    pub(crate) identifier: Option<String>,
+    pub(crate) version: Option<VersionObservation>,
+}
+impl Observation {
+    fn simple(kind: MatchKind) -> Self { Self { kind, identifier: None, version: None } }
+}
+
 fn regex(pattern:&str,insensitive:bool)->Result<Pattern,&'static str>{Pattern::new(pattern,insensitive)}
 fn glob(pattern:&str)->Result<GlobMatcher,&'static str>{if pattern.is_empty()||pattern.len()>4096{return Err("invalid-glob");}GlobBuilder::new(pattern).literal_separator(true).build().map(|g|g.compile_matcher()).map_err(|_|"invalid-glob")}
 pub(crate) enum Name {Literal(String),Pattern(Pattern)}
@@ -20,11 +30,11 @@ impl Matcher {
     fn base(path:&str)->&str{path.rsplit('/').next().unwrap_or(path)}
     fn dotenv(g:Option<&GlobMatcher>,path:&str)->bool{g.map_or_else(||{let b=Self::base(path);b.starts_with(".env")&&!b.contains("example")&&!b.contains("sample")},|x|x.is_match(path))}
     pub(crate) fn needs_bytes(&self,path:&str)->bool{match self{Self::Content(g,_)=>g.is_match(path),Self::Dotenv(g,_)=>Self::dotenv(g.as_ref(),path),Self::Dependency(e,_)=>providers::applies(e,path),_=>false}}
-    pub(crate) fn matches(&self,path:&str,is_dir:bool,bytes:Option<&[u8]>)->Result<Vec<Option<String>>,&'static str>{
-        let hit=|yes|if yes{vec![None]}else{Vec::new()};
-        match self{Self::FileGlob(g)=>Ok(hit(g.is_match(path))),Self::FileRegex(r,b)=>Ok(hit(r.matches(if *b{Self::base(path)}else{path})?)),_ if is_dir=>Ok(Vec::new()),Self::Extension(s)=>Ok(hit(path.ends_with(s.as_str()))),
-            Self::Content(g,n) if g.is_match(path)=>{let text=std::str::from_utf8(bytes.ok_or("missing-file-data")?).map_err(|_|"invalid-text")?;Ok(hit(match n{Name::Literal(s)=>text.contains(s.as_str()),Name::Pattern(r)=>r.matches(text)?}))},
-            Self::Dotenv(g,n) if Self::dotenv(g.as_ref(),path)=>{let text=std::str::from_utf8(bytes.ok_or("missing-file-data")?).map_err(|_|"invalid-text")?;let mut ids=Vec::new();for line in text.lines(){let t=line.trim();let t=t.strip_prefix("export ").unwrap_or(t);if let Some((k,_))=t.split_once('='){let k=k.trim();if !k.is_empty()&&k.as_bytes().first().is_some_and(|b|b.is_ascii_alphabetic()||*b==b'_')&&k.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_')&&n.matches(k)?{ids.push(None);}}}Ok(ids)},
-            Self::Dependency(e,n) if providers::applies(e,path)=>{let mut ids=Vec::new();for name in providers::names(e,path,bytes.ok_or("missing-file-data")?)?{if n.matches(&name)?{ids.push(None);}}Ok(ids)},_=>Ok(Vec::new())}
+    pub(crate) fn matches(&self,path:&str,is_dir:bool,bytes:Option<&[u8]>)->Result<Vec<Observation>,&'static str>{
+        let hit=|yes,kind|if yes{vec![Observation::simple(kind)]}else{Vec::new()};
+        match self{Self::FileGlob(g)=>Ok(hit(g.is_match(path),MatchKind::File)),Self::FileRegex(r,b)=>Ok(hit(r.matches(if *b{Self::base(path)}else{path})?,MatchKind::File)),_ if is_dir=>Ok(Vec::new()),Self::Extension(s)=>Ok(hit(path.ends_with(s.as_str()),MatchKind::Extension)),
+            Self::Content(g,n) if g.is_match(path)=>{let text=std::str::from_utf8(bytes.ok_or("missing-file-data")?).map_err(|_|"invalid-text")?;Ok(hit(match n{Name::Literal(s)=>text.contains(s.as_str()),Name::Pattern(r)=>r.matches(text)?},MatchKind::Content))},
+            Self::Dotenv(g,n) if Self::dotenv(g.as_ref(),path)=>{let text=std::str::from_utf8(bytes.ok_or("missing-file-data")?).map_err(|_|"invalid-text")?;let mut ids=Vec::new();for line in text.lines(){let t=line.trim();let t=t.strip_prefix("export ").unwrap_or(t);if let Some((k,_))=t.split_once('='){let k=k.trim();if !k.is_empty()&&k.as_bytes().first().is_some_and(|b|b.is_ascii_alphabetic()||*b==b'_')&&k.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_')&&n.matches(k)?{ids.push(Observation::simple(MatchKind::Dotenv));}}}Ok(ids)},
+            Self::Dependency(e,n) if providers::applies(e,path)=>{let bytes=bytes.ok_or("missing-file-data")?;let names=providers::names(e,path,bytes)?;let constraints=versions::observations(e,path,bytes);let kind=if e=="mcp"{MatchKind::McpPackage}else{MatchKind::Dependency};let mut ids=Vec::new();for name in names{if n.matches(&name)?{let identifier=versions::safe_identifier(&name);if let Some(values)=constraints.get(&name){for value in values{ids.push(Observation{kind,identifier:identifier.clone(),version:Some(value.clone())});}}else{ids.push(Observation{kind,identifier,version:None});}}}Ok(ids)},_=>Ok(Vec::new())}
     }
 }
