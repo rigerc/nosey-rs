@@ -9,7 +9,7 @@ The earlier 20–34 developer-week estimate no longer reflects the approved scop
 | ID | Work item |
 |---|---|
 | FND-01 | Confirm existing private `rigerc/nosey-rs` checkout and history; capture template baseline; plan separate official registry and Action repos; no replacement app repo |
-| FND-02 | Pin Kitter, Nosey-9, source registry and AI Catalog normative revision |
+| FND-02 | Pin Kitter, Nosey-9, source registry, AI Catalog 1.0 normative revision and reviewed `ai-catalog-rust` SDK; validate toolchain and dependency policy |
 | FND-03 | Run template-native bootstrap/doctor/quality checks and separately establish pinned Kitter Linux x86-64 CLI/GPUI baseline builds and tests |
 | FND-04 | Audit Kitter storage, library, installer, agent plugins, presets, preview and CLI |
 | FND-05 | Audit Nosey-9 rule grammar and fixtures; document exact parity and intentional deviations |
@@ -36,14 +36,14 @@ The earlier 20–34 developer-week estimate no longer reflects the approved scop
 
 | ID | Work item |
 |---|---|
-| REG-01 | Pin wire specification; define versioned intelligence/skill extension and YAML authoring schemas |
-| REG-02 | Standard AI Catalog model/parser/validator; unknown extensions, identity and integrity verification |
+| REG-01 | Confirm pinned SDK/spec compatibility; define versioned Nosey intelligence/skill extensions and YAML authoring schemas (no duplicate standard wire schema) |
+| REG-02 | Integrate pinned `ai-catalog`, `ai-catalog-validate`, `ai-catalog-trust`, `ai-catalog-discover` behind registry adapter; strict JSON, SDK diagnostics, original-byte trust, safe fetch and unknown extension preservation |
 | REG-03 | Namespace authority, semantic version compatibility and cross-registry reference resolution |
 | REG-04 | Global registry settings, approval, enable/priority, remove/refresh and official defaults |
-| REG-05 | Atomic snapshot cache, TTL, stale fallback and explicit connectivity policy |
-| REG-06 | YAML entity loader and deterministic compiler with standalone binary; source schemas under schema/nosey-registry/ |
+| REG-05 | Atomic original-byte snapshot cache with resolved base URL, TTL, stale fallback and explicit connectivity policy |
+| REG-06 | YAML entity loader and deterministic SDK-backed compiler with standalone binary; Nosey source schemas under schema/nosey-registry/ |
 | REG-07 | Private migration utility (xtask or isolated script/tool), attribution/provenance report and authorized sole-source import |
-| REG-08 | In-memory unified catalog index with duplicate canonical ID selection |
+| REG-08 | In-memory unified catalog index with priority and explicit within-registry release selection for duplicate canonical IDs |
 
 **Gate:** synthetic/authorized registry loads, compiles, validates and supports standard skills and custom intelligence. Failed refresh preserves the old snapshot; no unauthorized seed data published.
 
@@ -68,7 +68,7 @@ The earlier 20–34 developer-week estimate no longer reflects the approved scop
 | ID | Work item |
 |---|---|
 | LIB-01 | Extend central library metadata with canonical ID and source revision, one active copy |
-| LIB-02 | Git acquisition and AI Catalog artifact bundle acquisition, safe staging |
+| LIB-02 | Git and AI Catalog artifact bundle acquisition, SDK exact-byte digest verification and safe staging |
 | LIB-03 | Managed symlinks, global/project scopes and custom relative target support |
 | LIB-04 | Effective-skill groups, unmanaged read-only, partial target coverage |
 | LIB-05 | Advisory dependency/conflict warnings and token estimate integration |

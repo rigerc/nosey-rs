@@ -8,9 +8,11 @@
 **Application functionality donor:** [what1f/kitter](https://github.com/what1f/kitter) (to be imported into the existing Rust template, not yet present in the archive)  
 **Detection behavior reference:** [rigerc/nosey-9](https://github.com/rigerc/nosey-9)  
 **Exclusive initial registry data source:** [rigerc/nosey-registry](https://github.com/rigerc/nosey-registry)  
-**Interoperability:** [AI Catalog](https://ai-catalog.io/spec/), previously reviewed v0.9 RC; pin the exact normative revision before implementation.
+**Interoperability:** [AI Catalog](https://ai-catalog.io/spec/) 1.0 target, implemented through [Agent-Card/ai-catalog-rust](https://github.com/Agent-Card/ai-catalog-rust/tree/920ef70e1e5a602e142137f9ea6a1135fedbf110) (reviewed workspace version 0.4.0; pin normative specification revision in Phase 0).
 
 This linked implementation plan supersedes the earlier implementation plan, including its full non-TUI parity, automatic project reconciliation, immutable multi-version library, SQLite, cross-platform release and offline scanning proposals. Later interview decisions are authoritative. The repository-specific integration instructions in sections 2–4, 18–20 also supersede earlier assumptions about starting from a fresh GitHub fork. This plan is a specification, not an active task tracker; the work-item IDs in section 19 are stable planning references to translate into Beads issues. Proposed defaults and implementation details are identified separately from confirmed requirements.
+
+**SDK integration amendment:** Reuse upstream Rust crates for standard wire models, parsing, semantic validation, canonicalization, verification and discovery; Nosey owns intelligence extensions, policy, acquisition and YAML compilation. See chapters 4–6. All 100 interview decisions remain unchanged.
 
 ## Contents
 

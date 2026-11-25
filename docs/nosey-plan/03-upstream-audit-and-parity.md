@@ -42,6 +42,8 @@ The uploaded archive contains a virtual Rust workspace template, not the Kitter 
 
 No GPUI dependency or Nosey product crates are present in the inspected root workspace manifest. A previously stored `.agents/ci/ci-summary.md` is historical template evidence, not proof of a successful build of the archive. The declared toolchain, dependencies and quality gates must be run in a suitable environment before accepting the baseline.
 
+Add `Agent-Card/ai-catalog-rust` to `docs/upstream-baseline.yaml`: reviewed commit `920ef70e1e5a602e142137f9ea6a1135fedbf110`, workspace version 0.4.0, edition 2024, declared MSRV 1.95, Apache-2.0. Audit the matching normative specification revision, crate features, compatibility with the actual Nosey/GPUI toolchain and dependency/license policy; record test evidence for the pinned SDK before product integration. Do not infer successful compilation from the manifests or assume the repository README's older version examples are current. Prefer consuming the upstream crates over importing their source; retain their applicable notices.
+
 The audit resolves the exact detection grammar and existing Kitter platform/dependency assumptions. Any newly discovered feature that conflicts with the interview is an intentional deviation, not an automatic expansion of scope.
 
 ---
