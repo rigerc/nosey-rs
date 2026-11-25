@@ -1,7 +1,7 @@
 //! Test-first acceptance cases for the synthetic project-wide vertical slice.
 #![forbid(unsafe_code)]
 use nosey_registry::{CatalogIndex,RegistryInput,compile,parse_catalog};
-use nosey_scanner::{Completeness,Settings,scan};
+use nosey_scanner::{Completeness,Settings,VersionKind,MatchKind,scan};
 use nosey_recommendation::{evaluate,removal_candidates,Group};
 use std::{collections::{BTreeMap,BTreeSet},path::Path,sync::atomic::AtomicBool};
 #[test]
@@ -15,6 +15,8 @@ fn aggregate_and_recommend() -> Result<(),Box<dyn std::error::Error>> {
     let mut scan=scan(&root.join("project"),&index,&Settings::default(),&AtomicBool::new(false))?;
     assert_eq!(scan.completeness,Completeness::Complete);
     assert_eq!(scan.technologies.len(),2);
+    assert!(scan.technologies.values().flatten().any(|e| e.match_kind == Some(MatchKind::Dependency)
+        && e.identifier.is_some() && e.version.as_ref().is_some_and(|v|v.kind==VersionKind::ManifestConstraint)));
     let dismissed=BTreeSet::from(["urn:example:skill:alpha".into()]);
     let targets=BTreeSet::from(["agent-a".into()]);
     let rec=evaluate(&index,&scan,&dismissed,&targets,&BTreeMap::new());

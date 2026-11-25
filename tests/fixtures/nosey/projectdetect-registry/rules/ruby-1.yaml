@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.ruby-1
+technology: projectdetect-reference:technology.ruby
+kind: file
+pathScope: basename
+pathRegex: '^(?i:Gemfile)$'

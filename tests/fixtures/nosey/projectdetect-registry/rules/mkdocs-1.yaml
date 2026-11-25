@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.mkdocs-1
+technology: projectdetect-reference:technology.mkdocs
+kind: file
+pathScope: basename
+pathRegex: '^(?i:mkdocs\.yml)$'

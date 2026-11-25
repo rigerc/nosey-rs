@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.deno-2
+technology: what-stack-reference:technology.deno
+kind: file
+pathScope: basename
+pathRegex: '^deno\.jsonc$'

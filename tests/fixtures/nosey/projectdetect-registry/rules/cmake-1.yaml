@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.cmake-1
+technology: projectdetect-reference:technology.cmake
+kind: file
+pathScope: basename
+pathRegex: '^(?i:CMakeLists\.txt)$'

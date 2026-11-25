@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.perl-3
+technology: projectdetect-reference:technology.perl
+kind: file
+pathScope: basename
+pathRegex: '^(?i:cpanfile)$'

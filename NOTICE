@@ -12,3 +12,19 @@ Apache License 2.0, upstream commit 19711db044aabfa9846a65aaee693276d65af5c2.
 Modified for Nosey's explicit registration, non-destructive unregistration,
 bounded read-only discovery and unverified link classification.
 See licenses/kitter-APACHE-2.0.txt.
+
+Detection provider algorithms adapted from Nosey-9 (rigerc/nosey-9),
+MIT license, commit dca90b0528f01bf7962c72aae27fc2ab3492c3ac.
+See licenses/nosey-9-MIT.txt. Modified for Rust and bounded passive scanning.
+
+Bounded scanner file-read safeguards and candidate technology detection definitions
+adapted from what-stack (ehsan18t/what-stack), MIT license,
+Copyright (c) 2026 Ehsan Khan, upstream commit aa792571b5829b50dda71644857532dd80e302b8.
+See licenses/what-stack-MIT.txt. Modified for Nosey's registry-driven aggregate
+scans and rooted file access.
+
+Candidate project markers and build/cache exclusion names adapted from
+projectdetect (richardwooding/projectdetect-rs), MIT license,
+Copyright (c) 2026 Richard Wooding, commit 6b756065e0cb74a2e121381afa7cead4c145b262.
+See licenses/projectdetect-MIT.txt. Modified for Nosey's aggregate registry
+rules and global directory exclusion policy.

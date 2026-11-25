@@ -16,6 +16,10 @@ thiserror = { workspace = true }
 ai-catalog = { workspace = true }
 ai-catalog-trust = { workspace = true }
 ai-catalog-validate = { workspace = true }
+ai-catalog-discover = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
 serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 semver = { workspace = true }

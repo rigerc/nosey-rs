@@ -1,0 +1,4 @@
+id: what-stack-reference:rule.dotnet-fsharp-1
+technology: what-stack-reference:technology.dotnet-fsharp
+kind: extension
+extension: '.fsproj'

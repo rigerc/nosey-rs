@@ -46,6 +46,9 @@ enum Command {
         extension: String,
         #[arg(long)]
         approve_fixture: bool,
+        /// Enable passive MCP manifest inspection for the fixture.
+        #[arg(long)]
+        mcp: bool,
     },
 }
 
@@ -72,7 +75,7 @@ fn main() -> Result<()> {
             let audit = inspect_target(&state, &root, &target)?;
             println!("{}", serde_json::to_string_pretty(&audit)?);
         }
-        Command::ScanFixture { root, catalog, registry_id, extension, approve_fixture } => {
+        Command::ScanFixture { root, catalog, registry_id, extension, approve_fixture, mcp } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
             let snapshot = load_snapshot(&catalog)?;
             let index = CatalogIndex::build(
@@ -83,12 +86,14 @@ fn main() -> Result<()> {
                 &extension,
             )?;
             let root = root.canonicalize()?;
-            let scan = state.scan(&root, &index, &Settings::default(), &AtomicBool::new(false))?.clone();
-            let project = state.projects.get(&root).context("registered project disappeared")?;
-            let evaluation = nosey_recommendation::evaluate(
-                &index, &scan, &project.dismissed, &BTreeSet::new(), &BTreeMap::new(),
-            );
+            let settings = Settings { mcp, ..Settings::default() };
+            let attempt = state.scan(&root, &index, &settings, &AtomicBool::new(false)).map(Clone::clone);
             state.save(&args.state)?;
+            let scan = attempt?;
+            let project = state.projects.get(&root).context("registered project disappeared")?;
+            // Explicit synthetic fixture mode is not a production online session.
+            let evaluation = project.reevaluate(&index, &settings, true,
+                &BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new())?;
             println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
         }
     }

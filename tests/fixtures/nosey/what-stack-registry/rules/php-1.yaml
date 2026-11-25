@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.php-1
+technology: what-stack-reference:technology.php
+kind: file
+pathScope: basename
+pathRegex: '^composer\.json$'

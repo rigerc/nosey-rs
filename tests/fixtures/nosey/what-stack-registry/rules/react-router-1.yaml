@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.react-router-1
+technology: what-stack-reference:technology.react-router
+kind: file
+pathScope: basename
+pathRegex: '^react-router\.config(\.(js|cjs|mjs|ts|cts|mts))?$'

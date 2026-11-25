@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.eleventy-5
+technology: projectdetect-reference:technology.eleventy
+kind: file
+pathScope: basename
+pathRegex: '^(?i:eleventy\.config\.ts)$'

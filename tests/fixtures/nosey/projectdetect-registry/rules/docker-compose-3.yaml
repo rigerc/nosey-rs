@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.docker-compose-3
+technology: projectdetect-reference:technology.docker-compose
+kind: file
+pathScope: basename
+pathRegex: '^(?i:compose\.yml)$'

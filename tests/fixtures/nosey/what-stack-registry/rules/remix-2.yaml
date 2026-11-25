@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.remix-2
+technology: what-stack-reference:technology.remix
+kind: dependency
+ecosystem: npm
+name: '@remix-run/dev'

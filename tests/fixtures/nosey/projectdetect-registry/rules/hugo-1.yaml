@@ -1,0 +1,5 @@
+id: projectdetect-reference:rule.hugo-1
+technology: projectdetect-reference:technology.hugo
+kind: file
+pathScope: basename
+pathRegex: '^(?i:hugo\.toml)$'

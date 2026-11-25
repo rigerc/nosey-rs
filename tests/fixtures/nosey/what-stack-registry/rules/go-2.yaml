@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.go-2
+technology: what-stack-reference:technology.go
+kind: file
+pathScope: basename
+pathRegex: '^go\.work$'

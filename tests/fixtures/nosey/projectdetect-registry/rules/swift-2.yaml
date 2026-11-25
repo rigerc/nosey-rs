@@ -1,0 +1,4 @@
+id: projectdetect-reference:rule.swift-2
+technology: projectdetect-reference:technology.swift
+kind: extension
+extension: '.podspec'

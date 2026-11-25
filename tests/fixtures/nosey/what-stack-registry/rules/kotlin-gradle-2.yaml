@@ -1,0 +1,5 @@
+id: what-stack-reference:rule.kotlin-gradle-2
+technology: what-stack-reference:technology.kotlin-gradle
+kind: file
+pathScope: basename
+pathRegex: '^settings\.gradle\.kts$'

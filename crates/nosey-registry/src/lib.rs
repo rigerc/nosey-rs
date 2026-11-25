@@ -4,6 +4,11 @@ mod authoring;
 mod index;
 mod model;
 mod snapshot;
+/// Read-only in-memory search over catalog entities.
+pub mod explore;
+/// Explicit discovery, approval and refresh using original-byte verification.
+pub mod review;
+mod transport;
 pub use authoring::{compile, read_bounded};
 pub use index::{CatalogIndex, RegistryInput, SelectedSkill};
 pub use model::{Combination, Intelligence, Mapping, Rule, RuleKind, Technology};

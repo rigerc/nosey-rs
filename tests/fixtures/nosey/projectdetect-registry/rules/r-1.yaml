@@ -1,0 +1,4 @@
+id: projectdetect-reference:rule.r-1
+technology: projectdetect-reference:technology.r
+kind: extension
+extension: '.Rproj'
