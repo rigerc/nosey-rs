@@ -4,7 +4,7 @@
 
 ### 5.1 Contract
 
-Adopt AI Catalog as the base wire specification, with two Nosey-owned extensions: catalog-level technology intelligence and entry-level skill metadata. The prior plan reviewed v0.9 RC; exact version, media types, canonical identifiers, extension field semantics, digest and signature profiles must be checked against the pinned normative revision. The application consumes conformant JSON catalogs; YAML is the editable authoring format. Standard consumers can ignore Nosey extensions. No proprietary alternative wire protocol.
+Adopt AI Catalog as the base wire specification, with two Nosey-owned extensions: catalog-level technology intelligence and entry-level skill metadata. Target the AI Catalog 1.0 wire model supported by the reviewed SDK revision (chapter 4). Pin and check the matching normative specification revision in Phase 0; the earlier v0.9 RC review is historical, not the implementation target. Reuse `AiCatalog`, `CatalogEntry`, `HostInfo`, `Publisher`, `Signature`, `TrustManifest` and the SDK `MEDIA_TYPE_AGENT_SKILLS_*` constants rather than recreating them. The application consumes conformant JSON catalogs; YAML is the editable authoring format. Standard consumers can ignore Nosey extensions. No proprietary alternative wire protocol.
 
 - **Intelligence extension:** registry identity, extension version, technologies, detection rules, mappings, combinations, source repositories, assessment/provenance metadata as needed.
 - **Skill extension:** install name, Git acquisition details or bundle metadata, declared dependencies/conflicts, technology references, source availability and assessment references.
@@ -44,7 +44,7 @@ The following examples express the proposed data model, not a frozen grammar or 
 
 ```yaml
 schema_version: '1.0.0'
-ai_catalog_version: '0.9'
+ai_catalog_version: '1.0'
 id: official
 name: Nosey Official Registry
 license: CC-BY-4.0
@@ -167,7 +167,7 @@ Production publication rejects placeholder identifiers, digests, invalid revisio
 
 ```json
 {
-  "specVersion": "0.9",
+  "specVersion": "1.0",
   "host": {"displayName": "Nosey Official Registry", "identifier": "registry.example.org"},
   "extensions": {
     "io.example.nosey.intelligence": {
@@ -192,11 +192,12 @@ Production publication rejects placeholder identifiers, digests, invalid revisio
 }
 ```
 
-The JSON is an unsigned illustrative example with incomplete source information. It is not a conformance fixture or deployable catalog. The compiler emits exact standard fields required by the pinned specification and preserves unknown compatible extensions where necessary. The prior Level 2 publication/Level 3 verification target remains a design baseline, subject to confirming normative requirements; do not claim publisher authentication for operator-indexed third-party entries without evidence. Support native AI Catalog signature verification (previously reviewed JCS/JWS/ES256 profile), not an invented detached signature protocol. Explicit user approval, not signature presence, is the selected custom-registry trust policy.
+The JSON is an unsigned illustrative example with incomplete source information. It is not a conformance fixture or deployable catalog. The compiler builds SDK models from validated YAML and serializes with `ai_catalog::to_string_pretty` (or `write_writer`), then strictly parses and semantically validates the emitted bytes. Preserve unknown standard fields via SDK `extra_fields` and extension maps; decode Nosey extensions separately. Target Discoverable publication (valid catalog with host) and support Trusted verification when genuine publisher endorsements meet the SDK's requirements. `validate` never proves Trusted; `verify` on original bytes is required. Operator signatures are not equivalent to publisher endorsements. Reuse SDK canonicalization and verification; signing requires a separate reviewed signer. Never claim publisher authentication for third-party entries without evidence. Explicit user approval, not signature presence, is the selected custom-registry trust policy.
 
 ### 5.5 Identity and priority
 
 - Canonical artifact identifier is the only catalog deduplication key. Preserve eligible publisher identifiers; do not fabricate publisher-authorized identities. Operator-controlled identifiers must remain stable. Different identifiers remain different skills even if URLs, content or names coincide.
+- The SDK permits versioned entries sharing an identifier when versions differ. Nosey still deduplicates by identifier alone: choose the approved registry first, then apply a documented deterministic within-registry version-selection rule established in Phase 0 (never assume arbitrary version strings are SemVer). Do not use `get_by_id` alone to resolve ambiguous versioned entries; preserve all source/release evidence for inspection.
 - Highest-priority enabled registry supplies the selected entry for duplicate canonical identifiers. Retain provenance from other occurrences for inspection. Never silently fall back to a different source if an approved acquisition fails integrity validation.
 - Installation name/path is not canonical identity. Collision checks remain separate.
 - Official registry is authoritative for canonical technologies. Custom registries may reference official identifiers, augment their rules and mappings, or define namespaced new technologies. They cannot silently redefine official technologies. Bind each namespace to an approved registry identity, not arbitrary display names.

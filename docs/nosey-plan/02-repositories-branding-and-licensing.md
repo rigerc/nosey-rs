@@ -40,6 +40,8 @@ A registry-level license and individual skill licenses are separate. Registry St
 
 The original registry's redistribution and relicensing permission remains unresolved. Obtain a documented basis for each imported category of data before public release. Quarantine unauthorized data, do not publish it or assume Nosey-9's MIT code license covers it. Continue private development with synthetic or otherwise authorized test fixtures. Do not substitute a supplemental catalog; the original registry is the only initial data source. If the licensing gate cannot be satisfied, release of the populated official registry is blocked until the user revises the requirement.
 
+The upstream AI Catalog SDK is Apache-2.0; include applicable dependency license and notice information in distribution and review the pinned dependency graph through the existing license policy. This does not change MIT licensing for new Nosey code or CC BY 4.0 for eligible official registry data.
+
 ---
 
 [Plan index](../nosey-implementation-plan.md) · [Previous: 1. Product scope and workflows](01-product-scope-and-workflows.md) · [Next: 3. Upstream audit and parity boundaries](03-upstream-audit-and-parity.md)
