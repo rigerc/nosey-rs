@@ -2,7 +2,10 @@
 //! Install preview/revalidation adapted from Kitter src/project/install.rs.
 //!
 //! Unlike Kitter, no occupied path is replaced, and no unmanaged link adopted.
-//! Pending journal records survive an interrupted apply. Unlink is preview-only.
+//! Pending journal records survive an interrupted apply.
+
+mod maintenance;
+pub use maintenance::{LinkAction, LinkPreview};
 
 use crate::{
     Error, State,
@@ -54,6 +57,8 @@ struct LinkRecord {
     parent_identity: (u64, u64),
     // None is a pending record, never proof of ownership.
     link_identity: Option<(u64, u64)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tree_sha256: Option<String>,
 }
 
 /// Explicit read-only preview for a single project-local installation.
@@ -250,6 +255,7 @@ impl Library {
     /// Rejects stale, occupied, recovery-needed or unsafe changes. A crash or
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
+        let _mutation = self.lock_mutation()?;
         let fresh = self.preview(
             state,
             &approved.project,
@@ -299,6 +305,7 @@ impl Library {
             reasons: BTreeSet::from([fresh.reason]),
             parent_identity: identity(&parent)?,
             link_identity: None,
+            tree_sha256: Some(fresh.tree_sha256),
         };
         atomic_json(&journal_dir, &journal, &record, false)?;
         // Atomic non-replacing symlink creation; never delete a competing path.

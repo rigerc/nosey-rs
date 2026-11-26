@@ -1,6 +1,9 @@
 //! Development-only headless slice; production connectivity/trust orchestration remains a gate.
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+mod maintenance;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nosey_core::{State, skill_discovery::inspect_target};
@@ -67,6 +70,9 @@ enum Command {
         #[arg(long)]
         approve: String,
     },
+    #[cfg(target_os = "linux")]
+    #[command(flatten)]
+    Maintenance(maintenance::Command),
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -155,6 +161,8 @@ fn main() -> Result<()> {
                 serde_json::to_string_pretty(&library.apply(&state, &preview)?)?
             );
         }
+        #[cfg(target_os = "linux")]
+        Command::Maintenance(command) => maintenance::run(command, &state)?,
         #[cfg(target_os = "linux")]
         Command::AuditLinks { library } => {
             let library = Library::open(&state, &library)?;

@@ -4,22 +4,27 @@
 //!
 //! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 
+mod manifest;
+mod update;
+pub use update::UpdatePreview;
+
+use manifest::manifest;
+
 use crate::library_io::{directory, invalid, read, relative};
 use crate::{Error, State};
 use rustix::fs::{Mode, OFlags, openat};
 use serde::{Deserialize, Serialize};
-use serde_saphyr::granit_parser::{Scanner, StrInput, TokenType};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    sync::{Mutex, MutexGuard},
 };
 use walkdir::WalkDir;
 
 const MAX_FILE: usize = 8 * 1024 * 1024;
-const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 const MAX_TREE: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
 pub(crate) const MAX_RECORD: usize = 1024 * 1024;
@@ -53,6 +58,7 @@ pub struct SkillRecord {
 pub struct Library {
     pub(crate) root: PathBuf,
     _lock: File,
+    mutation: Mutex<()>,
 }
 
 pub(crate) fn hash(bytes: &[u8]) -> String {
@@ -157,7 +163,17 @@ impl Library {
             .map_err(|_| invalid("library busy or lock unavailable"))?;
         child_dir(&root, "objects")?;
         child_dir(&root, "links")?;
-        Ok(Self { root, _lock: lock })
+        Ok(Self {
+            root,
+            _lock: lock,
+            mutation: Mutex::new(()),
+        })
+    }
+
+    pub(crate) fn lock_mutation(&self) -> Result<MutexGuard<'_, ()>, Error> {
+        self.mutation
+            .lock()
+            .map_err(|_| invalid("library mutation lock poisoned"))
     }
 
     pub(crate) fn object_dir(&self, id: &str) -> PathBuf {
@@ -194,7 +210,25 @@ impl Library {
     /// Rejects invalid manifest, unsafe tree, bounds, overlapping paths and
     /// attempts to change an existing artifact under the same identity.
     pub fn import_fixture(&self, id: &str, source: &Path) -> Result<SkillRecord, Error> {
-        validate_id(id)?;
+        let _mutation = self.lock_mutation()?;
+        let (stage, record) = self.stage_fixture(id, source)?;
+        let destination = self.object_dir(id);
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => {
+                let current = self.get(id)?;
+                if current != record {
+                    return Err(invalid("existing artifact requires explicit update"));
+                }
+                return Ok(current);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        self.publish_stage(&stage, &destination, rustix::fs::RenameFlags::NOREPLACE)?;
+        Ok(record)
+    }
+
+    fn fixture_source(&self, source: &Path) -> Result<PathBuf, Error> {
         if fs::symlink_metadata(source)?.file_type().is_symlink() {
             return Err(invalid("linked source root"));
         }
@@ -202,6 +236,16 @@ impl Library {
         if source.starts_with(&self.root) || self.root.starts_with(&source) {
             return Err(invalid("source overlaps library"));
         }
+        Ok(source)
+    }
+
+    fn stage_fixture(
+        &self,
+        id: &str,
+        source: &Path,
+    ) -> Result<(tempfile::TempDir, SkillRecord), Error> {
+        validate_id(id)?;
+        let source = self.fixture_source(source)?;
         let objects = self.root.join("objects");
         // Published objects stay as private as the library root they live in.
         let stage = tempfile::Builder::new()
@@ -218,18 +262,6 @@ impl Library {
                 tree_sha256: digest,
             },
         };
-        let destination = self.object_dir(id);
-        match fs::symlink_metadata(&destination) {
-            Ok(_) => {
-                let current = self.get(id)?;
-                if current != record {
-                    return Err(invalid("existing artifact requires explicit update"));
-                }
-                return Ok(current);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
         atomic_json(
             stage.path(),
             &stage.path().join("record.json"),
@@ -239,7 +271,16 @@ impl Library {
         if tree(&skill, None)? != (record.source.tree_sha256.clone(), record.name.clone()) {
             return Err(invalid("staged content mismatch"));
         }
-        // Atomic no-replace publication; drop the empty temp path after rename.
+        Ok((stage, record))
+    }
+
+    fn publish_stage(
+        &self,
+        stage: &tempfile::TempDir,
+        destination: &Path,
+        flags: rustix::fs::RenameFlags,
+    ) -> Result<(), Error> {
+        let objects = self.root.join("objects");
         let parent = directory(&objects)?;
         rustix::fs::renameat_with(
             &parent,
@@ -251,91 +292,12 @@ impl Library {
             destination
                 .file_name()
                 .ok_or_else(|| invalid("object name"))?,
-            rustix::fs::RenameFlags::NOREPLACE,
+            flags,
         )
         .map_err(std::io::Error::from)?;
-        File::open(&objects)?.sync_all()?;
-        Ok(record)
+        rustix::fs::fsync(&parent).map_err(std::io::Error::from)?;
+        Ok(())
     }
-}
-
-fn manifest(bytes: &[u8]) -> Result<String, Error> {
-    let text = std::str::from_utf8(bytes).map_err(|_| invalid("manifest is not UTF-8"))?;
-    let mut lines = text.lines();
-    if lines.next() != Some("---") {
-        return Err(invalid("missing skill frontmatter"));
-    }
-    let mut header = String::new();
-    let mut closed = false;
-    for line in lines {
-        if line == "---" {
-            closed = true;
-            break;
-        }
-        header.push_str(line);
-        header.push('\n');
-        if header.len() > MAX_FRONTMATTER_BYTES {
-            return Err(invalid("frontmatter limit"));
-        }
-    }
-    if !closed {
-        return Err(invalid("unsupported skill frontmatter"));
-    }
-    // The Serde decoder accepts standard explicit tags and YAML directives.
-    // Inspect tokens first so even syntax on ignored fields is rejected.
-    for token in Scanner::new(StrInput::new(&header)) {
-        let token = token.map_err(|_| invalid("invalid skill frontmatter"))?;
-        if matches!(
-            token.token_type(),
-            TokenType::Tag(..)
-                | TokenType::VersionDirective(..)
-                | TokenType::TagDirective(..)
-                | TokenType::ReservedDirective(..)
-        ) {
-            return Err(invalid("unsupported skill frontmatter"));
-        }
-    }
-    let doc: serde_json::Value = serde_saphyr::from_str_with_options(
-        &header,
-        serde_saphyr::options! {
-            duplicate_keys: serde_saphyr::options::DuplicateKeyPolicy::Error,
-            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
-            budget: serde_saphyr::budget! {
-                max_documents: 1,
-                max_depth: 64,
-                max_anchors: 0,
-                max_aliases: 0,
-                max_total_scalar_bytes: MAX_FRONTMATTER_BYTES,
-            },
-        },
-    )
-    .map_err(|_| invalid("invalid skill frontmatter"))?;
-    let name = doc
-        .get("name")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| invalid("skill name missing"))?;
-    if name.is_empty()
-        || name.len() > 64
-        || name.starts_with('-')
-        || name.ends_with('-')
-        || name.contains("--")
-        || !name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-    {
-        return Err(invalid("invalid skill name"));
-    }
-    let description = doc
-        .get("description")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| invalid("skill description missing"))?;
-    if description.trim().is_empty()
-        || description.chars().count() > 1024
-        || description.chars().any(|c| c.is_control() && c != '\n')
-    {
-        return Err(invalid("invalid skill description"));
-    }
-    Ok(name.into())
 }
 
 fn tree(source: &Path, copy: Option<&Path>) -> Result<(String, String), Error> {
@@ -439,56 +401,5 @@ mod tests {
         assert_eq!(library.get(&first.id)?, first);
         assert!(Library::open(&State::default(), central.path()).is_err());
         Ok(())
-    }
-
-    #[test]
-    fn description_accepts_yaml_punctuation_as_text() {
-        for description in [
-            "Build & test",
-            "'Build & test * ! %'",
-            "|\n  Build & test\n  %YAML 1.2\n  *example !text",
-        ] {
-            let skill = format!("---\nname: build-test\ndescription: {description}\n---\n");
-            assert!(matches!(manifest(skill.as_bytes()), Ok(name) if name == "build-test"));
-        }
-    }
-
-    #[test]
-    fn rejects_yaml_syntax_in_frontmatter() {
-        for header in [
-            "name: build\ndescription: &unused Build",
-            "name: build\ndescription: *missing",
-            "name: build\ndescription: !custom Build",
-            "name: build\ndescription: !!str Build",
-            "name: build\ndescription: Build\nmetadata: {!!str key: value}",
-            "%YAML 1.2\n--- {name: build, description: Build}",
-            "%TAG !x! tag:example.com,2026:\n--- {name: build, description: Build}",
-            "%RESERVED data\n--- {name: build, description: Build}",
-            "name: build\nname: test\ndescription: Build",
-        ] {
-            let skill = format!("---\n{header}\n---\n");
-            assert!(manifest(skill.as_bytes()).is_err(), "{header}");
-        }
-    }
-
-    #[test]
-    fn preserves_frontmatter_validation() {
-        for header in [
-            "name: Bad-name\ndescription: Build".to_owned(),
-            "name: build--test\ndescription: Build".to_owned(),
-            "name: build\ndescription: true".to_owned(),
-            r#"name: build
-description: "Build\tTest""#
-                .to_owned(),
-            format!("name: build\ndescription: {}", "a".repeat(1025)),
-            format!(
-                "name: build\ndescription: Build\n# {}",
-                "a".repeat(MAX_FRONTMATTER_BYTES)
-            ),
-        ] {
-            let skill = format!("---\n{header}\n---\n");
-            assert!(manifest(skill.as_bytes()).is_err());
-        }
-        assert!(manifest(b"---\nname: build\ndescription: Build\n").is_err());
     }
 }
