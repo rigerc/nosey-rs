@@ -6,6 +6,8 @@
 
 mod acquisition;
 mod cleanup;
+mod git;
+pub use git::{GitAcquisitionPreview, GitSource};
 pub(crate) mod manifest;
 pub use acquisition::AcquisitionPreview;
 pub use nosey_registry::BundleSource;

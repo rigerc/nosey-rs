@@ -55,7 +55,7 @@ impl BundleSource {
         const MAX_METADATA: usize = 4096;
         if self.media_type != MEDIA_TYPE_AGENT_SKILLS_ZIP {
             return Err(Error::Invalid(
-                "only remote Agent Skill ZIP bundles are supported; Git acquisition is unavailable"
+                "only remote Agent Skill ZIP bundles are supported by the catalog bundle source"
                     .into(),
             ));
         }

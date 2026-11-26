@@ -19,10 +19,11 @@ nosey-scanner = { version = "0.0.0", path = "../nosey-scanner" }
 nosey-recommendation = { version = "0.0.0", path = "../nosey-recommendation" }
 
 sha2 = { workspace = true }
+url = { workspace = true }
 serde-saphyr = { workspace = true }
 walkdir = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zip = { workspace = true }
 url = { workspace = true }
-rustix = { workspace = true }
+rustix = { workspace = true, features = ["process"] }

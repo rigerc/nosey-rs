@@ -5,11 +5,12 @@ use crate::{
     Error, State,
     changes::{LinkAudit, Status},
     library_io::{directory, identity, invalid, read},
+    presets::PresetApplication,
 };
 use rustix::fs::{RenameFlags, fsync, renameat_with};
 use serde::Serialize;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -24,6 +25,8 @@ pub struct CleanupReport {
     pub unused: Vec<SkillRecord>,
     /// Every retained link or journal reference, including detached projects.
     pub references: Vec<LinkAudit>,
+    /// Applied presets grouped by the artifact they retain.
+    pub preset_references: BTreeMap<String, Vec<PresetApplication>>,
     /// Journal destinations requiring recovery or pointing to unavailable artifacts.
     pub unresolved: Vec<PathBuf>,
     /// Object directories that could not be verified.
@@ -39,6 +42,8 @@ pub struct RemovePreview {
     pub skill: SkillRecord,
     /// Recorded references to the copy.
     pub references: Vec<LinkAudit>,
+    /// Applied presets whose desired membership retains this copy.
+    pub preset_references: Vec<PresetApplication>,
     /// Whether external references were checked and none remain.
     pub external_references_checked: bool,
     /// Reason the copy cannot be removed.
@@ -69,15 +74,24 @@ impl Library {
             .map(|link| link.destination.clone())
             .collect();
         let (entries, unverifiable_objects) = self.cleanup_entries()?;
+        let preset_references: BTreeMap<_, _> = entries
+            .iter()
+            .filter_map(|entry| {
+                let applications = preset_references(state, &entry.id);
+                (!applications.is_empty()).then(|| (entry.id.clone(), applications))
+            })
+            .collect();
         Ok(CleanupReport {
             unused: entries
                 .into_iter()
                 .filter(|entry| {
                     !used.contains(entry.id.as_str())
+                        && !preset_references.contains_key(&entry.id)
                         && !targets.contains(&self.object_dir(&entry.id).join("skill"))
                 })
                 .collect(),
             references,
+            preset_references,
             unresolved,
             unverifiable_objects,
             external_references_checked: false,
@@ -101,7 +115,7 @@ impl Library {
         entries
             .into_iter()
             .filter(|entry| entry.source.path == source)
-            .map(|entry| self.removal_preview(entry, &links, false))
+            .map(|entry| self.removal_preview(state, entry, &links, false))
             .collect()
     }
 
@@ -119,6 +133,7 @@ impl Library {
     ) -> Result<RemovePreview, Error> {
         let _mutation = self.lock_mutation()?;
         self.removal_preview(
+            state,
             self.get(artifact)?,
             &self.audit_links(state)?,
             external_references_checked,
@@ -138,6 +153,7 @@ impl Library {
         let _mutation = self.lock_mutation()?;
         let artifact = &approved.skill.id;
         let fresh = self.removal_preview(
+            state,
             self.get(artifact)?,
             &self.audit_links(state)?,
             approved.external_references_checked,
@@ -178,18 +194,19 @@ impl Library {
 
     fn removal_preview(
         &self,
+        state: &State,
         skill: SkillRecord,
         links: &[LinkAudit],
         external_references_checked: bool,
     ) -> Result<RemovePreview, Error> {
-        // The reference inventory is also the extension point for global and preset ownership.
         let source = self.object_dir(&skill.id).join("skill");
         let references: Vec<_> = links
             .iter()
             .filter(|link| link.artifact == skill.id || link.source == source)
             .cloned()
             .collect();
-        let blocker = if !references.is_empty() {
+        let preset_references = preset_references(state, &skill.id);
+        let blocker = if !references.is_empty() || !preset_references.is_empty() {
             Some("managed or unresolved references still retain the library copy")
         } else if !external_references_checked {
             Some("external references have not been ruled out")
@@ -202,12 +219,14 @@ impl Library {
             "remove_unused_library_skill",
             &skill,
             &references,
+            &preset_references,
             external_references_checked,
             object_identity,
         ))?);
         Ok(RemovePreview {
             skill,
             references,
+            preset_references,
             external_references_checked,
             blocker,
             fingerprint,
@@ -241,4 +260,17 @@ impl Library {
         unverifiable.sort();
         Ok((entries, unverifiable))
     }
+}
+
+fn preset_references(state: &State, artifact: &str) -> Vec<PresetApplication> {
+    state
+        .preset_applications
+        .iter()
+        .filter(|application| {
+            state
+                .preset(&application.preset)
+                .is_some_and(|preset| preset.members.contains(artifact))
+        })
+        .cloned()
+        .collect()
 }

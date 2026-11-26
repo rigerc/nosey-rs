@@ -78,7 +78,7 @@ fn plan_acquires_once_then_installs_and_reuses_offline() -> Result<(), Box<dyn s
         reason: InstallReason::Manual,
     };
     let acquire = ChangeRequest::AcquireLibrarySkill {
-        source: bundle,
+        source: bundle.into(),
         install_name: Some("example".into()),
     };
     let plan = library.plan(&state, &[install.clone(), acquire.clone(), acquire])?;
@@ -149,7 +149,7 @@ fn scoped_install_waits_for_acquisition_in_the_same_plan() -> Result<(), Box<dyn
             home: home.path().to_path_buf(),
         }),
         ChangeRequest::AcquireLibrarySkill {
-            source: bundle.clone(),
+            source: bundle.clone().into(),
             install_name: Some("example".into()),
         },
     ];
@@ -406,5 +406,49 @@ fn old_state_uses_notify_policy() -> Result<(), Box<dyn std::error::Error>> {
         State::load(&path)?.update_policy,
         nosey_core::UpdatePolicy::Notify
     );
+    Ok(())
+}
+
+#[test]
+fn git_source_can_bind_a_pending_install_without_fetching() -> Result<(), Box<dyn std::error::Error>>
+{
+    use nosey_core::{changes::InstallReason, plan::ChangeRequest};
+
+    let central = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()?;
+    let project = tempfile::tempdir()?;
+    let mut state = State::default();
+    let root = state.register(project.path())?;
+    let target = PathBuf::from("skills");
+    fs::create_dir(root.join(&target))?;
+    let library = Library::open(&state, central.path())?;
+    let acquire = serde_json::from_value(serde_json::json!({
+        "action": "acquire_library_skill",
+        "install_name": "example",
+        "source": {
+            "artifact": "fixture:git",
+            "repo": "https://example.org/repo",
+            "revision": "0123456789012345678901234567890123456789",
+            "path": "skills/example"
+        }
+    }))?;
+    let plan = library.plan(
+        &state,
+        &[
+            acquire,
+            ChangeRequest::InstallLink {
+                project: root,
+                target,
+                artifact: "fixture:git".into(),
+                reason: InstallReason::Manual,
+            },
+        ],
+    )?;
+    assert_eq!(plan.eligible(), 2);
+    assert!(matches!(
+        plan.changes[1].detail,
+        Some(nosey_core::plan::ChangeDetail::PendingInstall { .. })
+    ));
     Ok(())
 }

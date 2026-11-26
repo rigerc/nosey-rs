@@ -218,7 +218,7 @@ fn extract(bytes: &[u8], root: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn check_name(expected: Option<&str>, actual: &str) -> Result<(), Error> {
+pub(super) fn check_name(expected: Option<&str>, actual: &str) -> Result<(), Error> {
     if expected.is_some_and(|name| name != actual) {
         return Err(invalid(
             "manifest name differs from the reviewed install name",

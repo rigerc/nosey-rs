@@ -64,19 +64,15 @@ impl Library {
                 install_name,
             } => {
                 if acquisitions
-                    .get(source.artifact.as_str())
+                    .get(source.artifact())
                     .is_some_and(Option::is_none)
                 {
                     return Err(invalid("conflicting acquisitions for one artifact"));
                 }
-                let preview = self.preview_acquire(source)?;
+                let preview = self.preview_acquisition(source)?;
                 if let Some(name) = install_name {
                     skill_name(name)?;
-                    if preview
-                        .cached
-                        .as_ref()
-                        .is_some_and(|cached| &cached.name != name)
-                    {
+                    if preview.cached().is_some_and(|cached| &cached.name != name) {
                         return Err(invalid("cached skill name differs from the expected name"));
                     }
                 }
@@ -112,7 +108,7 @@ impl Library {
     }
 
     /// Preview an install from local content, or, when the artifact is not yet
-    /// in the library, against a bundle acquired earlier in the same plan.
+    /// in the library, against a source acquired earlier in the same plan.
     fn preview_install(
         &self,
         state: &State,
@@ -143,7 +139,7 @@ impl Library {
         else {
             return Err(error);
         };
-        if self.preview_acquire(source)?.cached.is_some() {
+        if self.preview_acquisition(source)?.cached().is_some() {
             return Err(error);
         }
         // The local tree digest is only known after extraction.
