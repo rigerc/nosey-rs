@@ -1,5 +1,5 @@
 //! Original-byte atomic cache. No fetch or trust escalation is performed here.
-use crate::{Error, parse_catalog, read_bounded, MAX_CATALOG_BYTES};
+use crate::{Error, MAX_CATALOG_BYTES, parse_catalog, read_bounded};
 use std::{io::Write, path::Path};
 /// Validated cached document, retaining exact input bytes.
 #[derive(Debug)]
@@ -22,7 +22,10 @@ pub fn load_snapshot(path: &Path) -> Result<Snapshot, Error> {
 /// Invalid data or write failure leaves the previous snapshot untouched.
 pub fn save_snapshot(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     parse_catalog(bytes)?;
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     temp.write_all(bytes)?;
     temp.as_file().sync_all()?;

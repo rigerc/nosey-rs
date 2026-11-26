@@ -9,7 +9,9 @@ pub(crate) enum Pattern {
 
 impl Pattern {
     pub(crate) fn new(pattern: &str, insensitive: bool) -> Result<Self, &'static str> {
-        if pattern.is_empty() || pattern.len() > 4096 { return Err("invalid-regex"); }
+        if pattern.is_empty() || pattern.len() > 4096 {
+            return Err("invalid-regex");
+        }
         if let Ok(r) = regex::RegexBuilder::new(pattern)
             .case_insensitive(insensitive)
             .size_limit(1024 * 1024)
@@ -32,7 +34,9 @@ impl Pattern {
         match self {
             Self::Linear(r) => Ok(r.is_match(value)),
             Self::Fancy(r) => {
-                if value.len() > 256 * 1024 { return Err("complex-regex-input-limit"); }
+                if value.len() > 256 * 1024 {
+                    return Err("complex-regex-input-limit");
+                }
                 r.is_match(value).map_err(|_| "complex-regex-budget")
             }
         }

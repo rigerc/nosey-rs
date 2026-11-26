@@ -56,11 +56,7 @@ pub struct TargetAudit {
 /// non-directory targets, inaccessible entries and excessive target depth or
 /// enumeration size. Intended for normal local trees, not concurrent hostile
 /// filesystem mutation (metadata checks are not race-proof).
-pub fn inspect_target(
-    state: &State,
-    project: &Path,
-    target: &Path,
-) -> Result<TargetAudit, Error> {
+pub fn inspect_target(state: &State, project: &Path, target: &Path) -> Result<TargetAudit, Error> {
     let root = project.canonicalize()?;
     if !state.projects.contains_key(&root) {
         return Err(Error::Invalid("project not registered".into()));
@@ -71,7 +67,9 @@ pub fn inspect_target(
     let mut depth = 0;
     for component in target.components() {
         let Component::Normal(part) = component else {
-            return Err(Error::Invalid("target must be a relative descendant".into()));
+            return Err(Error::Invalid(
+                "target must be a relative descendant".into(),
+            ));
         };
         depth += 1;
         if depth > MAX_TARGET_DEPTH {
@@ -85,13 +83,22 @@ pub fn inspect_target(
         match metadata(&dir)? {
             None => absent = true,
             Some(m) if m.is_dir() && !m.file_type().is_symlink() => {}
-            Some(_) => return Err(Error::Invalid("target component is not a real directory".into())),
+            Some(_) => {
+                return Err(Error::Invalid(
+                    "target component is not a real directory".into(),
+                ));
+            }
         }
     }
     if depth == 0 {
-        return Err(Error::Invalid("target must be a relative descendant".into()));
+        return Err(Error::Invalid(
+            "target must be a relative descendant".into(),
+        ));
     }
-    let mut audit = TargetAudit { target: relative.clone(), candidates: Vec::new() };
+    let mut audit = TargetAudit {
+        target: relative.clone(),
+        candidates: Vec::new(),
+    };
     if absent {
         return Ok(audit);
     }
@@ -136,7 +143,9 @@ fn inspect_manifest(
     let path = dir.join(MANIFEST);
     if let Some(m) = metadata(&path)? {
         if m.is_file() {
-            candidates.push(Candidate::Manifest { path: relative.join(MANIFEST) });
+            candidates.push(Candidate::Manifest {
+                path: relative.join(MANIFEST),
+            });
         }
         // A linked manifest is not read or considered a regular manifest.
         // Its containing directory is not asserted to be a skill.
@@ -149,7 +158,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discovers_direct_manifests_and_not_nested_groups() -> Result<(), Box<dyn std::error::Error>> {
+    fn discovers_direct_manifests_and_not_nested_groups() -> Result<(), Box<dyn std::error::Error>>
+    {
         let temp = tempfile::tempdir()?;
         let target = temp.path().join("skills");
         fs::create_dir_all(target.join("a"))?;
@@ -159,7 +169,12 @@ mod tests {
         let mut state = State::default();
         let project = state.register(temp.path())?;
         let result = inspect_target(&state, &project, Path::new("skills"))?;
-        assert_eq!(result.candidates, vec![Candidate::Manifest { path: "skills/a/SKILL.md".into() }]);
+        assert_eq!(
+            result.candidates,
+            vec![Candidate::Manifest {
+                path: "skills/a/SKILL.md".into()
+            }]
+        );
         assert_eq!(fs::read_to_string(target.join("a/SKILL.md"))?, "untouched");
         assert!(inspect_target(&state, &project, Path::new("missing")).is_ok());
         assert!(inspect_target(&state, &project, Path::new("missing/../escape")).is_err());
@@ -170,7 +185,8 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn reports_links_without_following_or_claiming_ownership() -> Result<(), Box<dyn std::error::Error>> {
+    fn reports_links_without_following_or_claiming_ownership()
+    -> Result<(), Box<dyn std::error::Error>> {
         use std::os::unix::fs::symlink;
         let temp = tempfile::tempdir()?;
         let outside = tempfile::tempdir()?;
@@ -183,12 +199,24 @@ mod tests {
         let mut state = State::default();
         let project = state.register(temp.path())?;
         let result = inspect_target(&state, &project, Path::new("skills"))?;
-        assert_eq!(result.candidates, vec![
-            Candidate::UnverifiedLink { path: "skills/broken".into(), target: "../missing".into() },
-            Candidate::UnverifiedLink { path: "skills/linked".into(), target: outside.path().to_path_buf() },
-        ]);
+        assert_eq!(
+            result.candidates,
+            vec![
+                Candidate::UnverifiedLink {
+                    path: "skills/broken".into(),
+                    target: "../missing".into()
+                },
+                Candidate::UnverifiedLink {
+                    path: "skills/linked".into(),
+                    target: outside.path().to_path_buf()
+                },
+            ]
+        );
         assert!(inspect_target(&state, &project, Path::new("linked-root")).is_err());
-        assert_eq!(fs::read_to_string(outside.path().join(MANIFEST))?, "outside");
+        assert_eq!(
+            fs::read_to_string(outside.path().join(MANIFEST))?,
+            "outside"
+        );
         Ok(())
     }
 }

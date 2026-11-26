@@ -6,7 +6,10 @@ use nosey_recommendation::{Evaluation, TargetState, evaluate, removal_candidates
 use nosey_registry::CatalogIndex;
 use nosey_scanner::{Completeness, Settings, fingerprints};
 use serde::Serialize;
-use std::{collections::{BTreeMap, BTreeSet}, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 /// Why saved observations cannot be treated as current.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -42,10 +45,16 @@ impl Project {
     ///
     /// Returns a fingerprint serialization error.
     pub fn freshness(&self, index: &CatalogIndex, settings: &Settings) -> Result<Freshness, Error> {
-        let Some(scan) = self.scan.as_ref() else { return Ok(Freshness::Missing); };
+        let Some(scan) = self.scan.as_ref() else {
+            return Ok(Freshness::Missing);
+        };
         let (rule_digest, settings_digest) = fingerprints(index, settings)?;
-        if scan.rule_digest != rule_digest { return Ok(Freshness::RulesChanged); }
-        if scan.settings_digest != settings_digest { return Ok(Freshness::SettingsChanged); }
+        if scan.rule_digest != rule_digest {
+            return Ok(Freshness::RulesChanged);
+        }
+        if scan.settings_digest != settings_digest {
+            return Ok(Freshness::SettingsChanged);
+        }
         if scan.completeness != Completeness::Complete
             || self.last_attempt != Some(Completeness::Complete)
         {
@@ -73,16 +82,28 @@ impl Project {
         coverage: &BTreeMap<String, BTreeMap<String, TargetState>>,
         previous_mapping_only: &BTreeSet<String>,
     ) -> Result<SavedEvaluation, Error> {
-        if !online { return Err(Error::Invalid("recommendation evaluation unavailable offline".into())); }
+        if !online {
+            return Err(Error::Invalid(
+                "recommendation evaluation unavailable offline".into(),
+            ));
+        }
         let freshness = self.freshness(index, settings)?;
         let Some(scan) = self.scan.as_ref() else {
             return Err(Error::Invalid("no saved scan".into()));
         };
         let evaluation = evaluate(index, scan, &self.dismissed, targets, coverage);
         let removal_candidates = removal_candidates(
-            scan, freshness == Freshness::Current, online, previous_mapping_only, &evaluation,
+            scan,
+            freshness == Freshness::Current,
+            online,
+            previous_mapping_only,
+            &evaluation,
         );
-        Ok(SavedEvaluation { freshness, evaluation, removal_candidates })
+        Ok(SavedEvaluation {
+            freshness,
+            evaluation,
+            removal_candidates,
+        })
     }
 
     /// Persist an explicit dismissal in this project record.
@@ -91,7 +112,8 @@ impl Project {
     ///
     /// Rejects empty, oversized or control-bearing canonical identifiers.
     pub fn dismiss(&mut self, canonical_id: &str) -> Result<bool, Error> {
-        if canonical_id.is_empty() || canonical_id.len() > 4096
+        if canonical_id.is_empty()
+            || canonical_id.len() > 4096
             || canonical_id.chars().any(char::is_control)
         {
             return Err(Error::Invalid("invalid canonical skill identifier".into()));
@@ -112,14 +134,16 @@ impl State {
     ///
     /// Returns an error if the root is not registered.
     pub fn project_mut(&mut self, root: &Path) -> Result<&mut Project, Error> {
-        self.projects.get_mut(root).ok_or_else(|| Error::Invalid("project not registered".into()))
+        self.projects
+            .get_mut(root)
+            .ok_or_else(|| Error::Invalid("project not registered".into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nosey_registry::{Intelligence, Technology, Rule, RuleKind, Mapping};
+    use nosey_registry::{Intelligence, Mapping, Rule, RuleKind, Technology};
     use nosey_scanner::ScanResult;
 
     fn intelligence(id: &str) -> Intelligence {
@@ -127,10 +151,19 @@ mod tests {
         Intelligence {
             schema_version: "1.0.0".into(),
             registry_id: id.into(),
-            technologies: vec![Technology { id: tech.clone(), name: "Example".into(), category: String::new(), aliases: vec![] }],
+            technologies: vec![Technology {
+                id: tech.clone(),
+                name: "Example".into(),
+                category: String::new(),
+                aliases: vec![],
+            }],
             rules: vec![Rule {
-                id: format!("{id}:rule.example"), technology: tech, disabled: false,
-                matcher: RuleKind::Extension { extension: ".demo".into() },
+                id: format!("{id}:rule.example"),
+                technology: tech,
+                disabled: false,
+                matcher: RuleKind::Extension {
+                    extension: ".demo".into(),
+                },
             }],
             mappings: vec![],
             combinations: vec![],
@@ -142,33 +175,86 @@ mod tests {
         let a = intelligence("a");
         let b = intelligence("b");
         let mut index = CatalogIndex {
-            technologies: a.technologies.iter().chain(&b.technologies).map(|t| t.id.clone()).collect(),
-            intelligence: vec![(0, a), (1, b)], ..Default::default()
+            technologies: a
+                .technologies
+                .iter()
+                .chain(&b.technologies)
+                .map(|t| t.id.clone())
+                .collect(),
+            intelligence: vec![(0, a), (1, b)],
+            ..Default::default()
         };
         let settings = Settings::default();
         let (rule_digest, settings_digest) = fingerprints(&index, &settings)?;
         let mut project = Project {
-            scan: Some(ScanResult { completeness: Completeness::Complete,
-                technologies: BTreeMap::new(), diagnostics: BTreeSet::new(), rule_digest, settings_digest }),
-            last_attempt: Some(Completeness::Complete), ..Default::default()
+            scan: Some(ScanResult {
+                completeness: Completeness::Complete,
+                technologies: BTreeMap::new(),
+                diagnostics: BTreeSet::new(),
+                rule_digest,
+                settings_digest,
+            }),
+            last_attempt: Some(Completeness::Complete),
+            ..Default::default()
         };
         assert_eq!(project.freshness(&index, &settings)?, Freshness::Current);
         index.intelligence[0].1.mappings.push(Mapping {
-            id: "a:map.demo".into(), technology: "a:technology.example".into(), skills: vec![],
+            id: "a:map.demo".into(),
+            technology: "a:technology.example".into(),
+            skills: vec![],
         });
-        index.intelligence.swap(0,1);
+        index.intelligence.swap(0, 1);
         assert_eq!(project.freshness(&index, &settings)?, Freshness::Current);
         let former = BTreeSet::from(["urn:example:former".into()]);
-        let result = project.reevaluate(&index, &settings, true, &BTreeSet::new(), &BTreeMap::new(), &former)?;
+        let result = project.reevaluate(
+            &index,
+            &settings,
+            true,
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &former,
+        )?;
         assert_eq!(result.removal_candidates, former);
-        assert!(project.reevaluate(&index, &settings, false, &BTreeSet::new(), &BTreeMap::new(), &former).is_err());
+        assert!(
+            project
+                .reevaluate(
+                    &index,
+                    &settings,
+                    false,
+                    &BTreeSet::new(),
+                    &BTreeMap::new(),
+                    &former
+                )
+                .is_err()
+        );
         project.last_attempt = Some(Completeness::Cancelled);
         assert_eq!(project.freshness(&index, &settings)?, Freshness::Incomplete);
-        assert!(project.reevaluate(&index, &settings, true, &BTreeSet::new(), &BTreeMap::new(), &former)?.removal_candidates.is_empty());
-        let new_settings = Settings { max_depth: 10, ..settings.clone() };
-        assert_eq!(project.freshness(&index, &new_settings)?, Freshness::SettingsChanged);
+        assert!(
+            project
+                .reevaluate(
+                    &index,
+                    &settings,
+                    true,
+                    &BTreeSet::new(),
+                    &BTreeMap::new(),
+                    &former
+                )?
+                .removal_candidates
+                .is_empty()
+        );
+        let new_settings = Settings {
+            max_depth: 10,
+            ..settings.clone()
+        };
+        assert_eq!(
+            project.freshness(&index, &new_settings)?,
+            Freshness::SettingsChanged
+        );
         index.intelligence[0].1.rules[0].disabled = true;
-        assert_eq!(project.freshness(&index, &settings)?, Freshness::RulesChanged);
+        assert_eq!(
+            project.freshness(&index, &settings)?,
+            Freshness::RulesChanged
+        );
         assert!(project.dismiss("urn:example:skill")?);
         assert!(!project.dismiss("urn:example:skill")?);
         assert!(project.restore("urn:example:skill"));

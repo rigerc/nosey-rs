@@ -22,7 +22,9 @@ fn provider(local: &str, expr: &Expression) -> Result<String, &'static str> {
         Expression::Object(entries) => {
             let mut source = None;
             for (key, value) in entries {
-                if key_text(key)? != "source" { continue; }
+                if key_text(key)? != "source" {
+                    continue;
+                }
                 let Expression::String(s) = value else {
                     return Err("dynamic-terraform-source");
                 };
@@ -30,7 +32,9 @@ fn provider(local: &str, expr: &Expression) -> Result<String, &'static str> {
                     return Err("duplicate-terraform-source");
                 }
             }
-            let Some(source) = source else { return Ok(fallback()); };
+            let Some(source) = source else {
+                return Ok(fallback());
+            };
             if source.is_empty() || source.contains(['$', '%']) {
                 return Err("invalid-terraform-source");
             }
@@ -45,7 +49,9 @@ fn provider(local: &str, expr: &Expression) -> Result<String, &'static str> {
 }
 
 pub(crate) fn names(ecosystem: &str, text: &str) -> Result<BTreeSet<String>, &'static str> {
-    if text.len() > MAX_HCL_BYTES { return Err("terraform-size-limit"); }
+    if text.len() > MAX_HCL_BYTES {
+        return Err("terraform-size-limit");
+    }
     let body = hcl::parse(text).map_err(|_| "malformed-terraform-hcl")?;
     let mut out = BTreeSet::new();
     for block in body.blocks() {
@@ -56,7 +62,11 @@ pub(crate) fn names(ecosystem: &str, text: &str) -> Result<BTreeSet<String>, &'s
                 }
             }
         } else if block.identifier() == "terraform" {
-            for required in block.body().blocks().filter(|b| b.identifier() == "required_providers") {
+            for required in block
+                .body()
+                .blocks()
+                .filter(|b| b.identifier() == "required_providers")
+            {
                 for attr in required.body().attributes() {
                     out.insert(provider(attr.key(), attr.expr())?);
                 }
@@ -85,21 +95,31 @@ resource "aws_s3_bucket" "example" {}
 resource "custom_thing" "example" {}
 # resource "commented" "not_real" {}
 "#;
-        assert_eq!(names("terraform", input)?, BTreeSet::from([
-            "registry.terraform.io/hashicorp/aws".into(),
-            "example.org/team/provider".into(),
-            "registry.terraform.io/hashicorp/local".into(),
-            "registry.terraform.io/hashicorp/old".into(),
-        ]));
-        assert_eq!(names("terraform.resource", input)?, BTreeSet::from([
-            "aws_s3_bucket".into(), "custom_thing".into()
-        ]));
+        assert_eq!(
+            names("terraform", input)?,
+            BTreeSet::from([
+                "registry.terraform.io/hashicorp/aws".into(),
+                "example.org/team/provider".into(),
+                "registry.terraform.io/hashicorp/local".into(),
+                "registry.terraform.io/hashicorp/old".into(),
+            ])
+        );
+        assert_eq!(
+            names("terraform.resource", input)?,
+            BTreeSet::from(["aws_s3_bucket".into(), "custom_thing".into()])
+        );
         Ok(())
     }
 
     #[test]
     fn dynamic_sources_and_malformed_hcl_are_incomplete() {
-        assert!(names("terraform", "terraform { required_providers { aws = var.source } }").is_err());
+        assert!(
+            names(
+                "terraform",
+                "terraform { required_providers { aws = var.source } }"
+            )
+            .is_err()
+        );
         assert!(names("terraform.resource", "resource {").is_err());
     }
 }

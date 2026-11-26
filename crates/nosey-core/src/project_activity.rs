@@ -53,9 +53,15 @@ impl State {
             .ok()
             .and_then(|duration| u64::try_from(duration.as_millis()).ok())
             .unwrap_or_default();
-        let next = self.project_activity.values().copied().max()
-            .unwrap_or_default().saturating_add(1);
-        self.project_activity.insert(root.to_path_buf(), now.max(next));
+        let next = self
+            .project_activity
+            .values()
+            .copied()
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1);
+        self.project_activity
+            .insert(root.to_path_buf(), now.max(next));
     }
 }
 
@@ -65,7 +71,8 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn registers_once_orders_and_forgets_without_mutating_project() -> Result<(), Box<dyn std::error::Error>> {
+    fn registers_once_orders_and_forgets_without_mutating_project()
+    -> Result<(), Box<dyn std::error::Error>> {
         let temp = tempfile::tempdir()?;
         let a = temp.path().join("a");
         let b = temp.path().join("b");
