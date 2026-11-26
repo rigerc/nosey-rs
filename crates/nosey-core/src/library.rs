@@ -3,6 +3,9 @@
 //! Explicitly local fixtures only; no catalog trust is inferred from a path.
 //! Upstream: https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2
 
+mod update;
+pub use update::UpdatePreview;
+
 use crate::library_io::{directory, invalid, read, relative};
 use crate::{Error, State};
 use rustix::fs::{Mode, OFlags, openat};
@@ -13,6 +16,7 @@ use std::{
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    sync::{Mutex, MutexGuard},
 };
 use walkdir::WalkDir;
 
@@ -50,6 +54,7 @@ pub struct SkillRecord {
 pub struct Library {
     pub(crate) root: PathBuf,
     _lock: File,
+    mutation: Mutex<()>,
 }
 
 pub(crate) fn hash(bytes: &[u8]) -> String {
@@ -154,7 +159,17 @@ impl Library {
             .map_err(|_| invalid("library busy or lock unavailable"))?;
         child_dir(&root, "objects")?;
         child_dir(&root, "links")?;
-        Ok(Self { root, _lock: lock })
+        Ok(Self {
+            root,
+            _lock: lock,
+            mutation: Mutex::new(()),
+        })
+    }
+
+    pub(crate) fn lock_mutation(&self) -> Result<MutexGuard<'_, ()>, Error> {
+        self.mutation
+            .lock()
+            .map_err(|_| invalid("library mutation lock poisoned"))
     }
 
     pub(crate) fn object_dir(&self, id: &str) -> PathBuf {
@@ -191,7 +206,25 @@ impl Library {
     /// Rejects invalid manifest, unsafe tree, bounds, overlapping paths and
     /// attempts to change an existing artifact under the same identity.
     pub fn import_fixture(&self, id: &str, source: &Path) -> Result<SkillRecord, Error> {
-        validate_id(id)?;
+        let _mutation = self.lock_mutation()?;
+        let (stage, record) = self.stage_fixture(id, source)?;
+        let destination = self.object_dir(id);
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => {
+                let current = self.get(id)?;
+                if current != record {
+                    return Err(invalid("existing artifact requires explicit update"));
+                }
+                return Ok(current);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        self.publish_stage(&stage, &destination, rustix::fs::RenameFlags::NOREPLACE)?;
+        Ok(record)
+    }
+
+    fn fixture_source(&self, source: &Path) -> Result<PathBuf, Error> {
         if fs::symlink_metadata(source)?.file_type().is_symlink() {
             return Err(invalid("linked source root"));
         }
@@ -199,6 +232,16 @@ impl Library {
         if source.starts_with(&self.root) || self.root.starts_with(&source) {
             return Err(invalid("source overlaps library"));
         }
+        Ok(source)
+    }
+
+    fn stage_fixture(
+        &self,
+        id: &str,
+        source: &Path,
+    ) -> Result<(tempfile::TempDir, SkillRecord), Error> {
+        validate_id(id)?;
+        let source = self.fixture_source(source)?;
         let objects = self.root.join("objects");
         // Published objects stay as private as the library root they live in.
         let stage = tempfile::Builder::new()
@@ -215,18 +258,6 @@ impl Library {
                 tree_sha256: digest,
             },
         };
-        let destination = self.object_dir(id);
-        match fs::symlink_metadata(&destination) {
-            Ok(_) => {
-                let current = self.get(id)?;
-                if current != record {
-                    return Err(invalid("existing artifact requires explicit update"));
-                }
-                return Ok(current);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
         atomic_json(
             stage.path(),
             &stage.path().join("record.json"),
@@ -236,7 +267,16 @@ impl Library {
         if tree(&skill, None)? != (record.source.tree_sha256.clone(), record.name.clone()) {
             return Err(invalid("staged content mismatch"));
         }
-        // Atomic no-replace publication; drop the empty temp path after rename.
+        Ok((stage, record))
+    }
+
+    fn publish_stage(
+        &self,
+        stage: &tempfile::TempDir,
+        destination: &Path,
+        flags: rustix::fs::RenameFlags,
+    ) -> Result<(), Error> {
+        let objects = self.root.join("objects");
         let parent = directory(&objects)?;
         rustix::fs::renameat_with(
             &parent,
@@ -248,11 +288,11 @@ impl Library {
             destination
                 .file_name()
                 .ok_or_else(|| invalid("object name"))?,
-            rustix::fs::RenameFlags::NOREPLACE,
+            flags,
         )
         .map_err(std::io::Error::from)?;
-        File::open(&objects)?.sync_all()?;
-        Ok(record)
+        rustix::fs::fsync(&parent).map_err(std::io::Error::from)?;
+        Ok(())
     }
 }
 

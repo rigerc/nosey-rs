@@ -254,6 +254,7 @@ impl Library {
     /// Rejects stale, occupied, recovery-needed or unsafe changes. A crash or
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
+        let _mutation = self.lock_mutation()?;
         let fresh = self.preview(
             state,
             &approved.project,

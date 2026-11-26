@@ -1,6 +1,9 @@
 //! Development-only headless slice; production connectivity/trust orchestration remains a gate.
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+mod maintenance;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nosey_core::{State, skill_discovery::inspect_target};
@@ -67,20 +70,9 @@ enum Command {
         #[arg(long)]
         approve: String,
     },
-    /// Show how an interrupted link journal can be recovered.
     #[cfg(target_os = "linux")]
-    PreviewRecover {
-        library: PathBuf,
-        destination: PathBuf,
-    },
-    /// Recover a link journal using an approved preview.
-    #[cfg(target_os = "linux")]
-    ApplyRecover {
-        library: PathBuf,
-        destination: PathBuf,
-        #[arg(long)]
-        approve: String,
-    },
+    #[command(flatten)]
+    Maintenance(maintenance::Command),
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -170,33 +162,7 @@ fn main() -> Result<()> {
             );
         }
         #[cfg(target_os = "linux")]
-        Command::PreviewRecover {
-            library,
-            destination,
-        } => {
-            let library = Library::open(&state, &library)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&library.preview_recover(&destination)?)?
-            );
-        }
-        #[cfg(target_os = "linux")]
-        Command::ApplyRecover {
-            library,
-            destination,
-            approve,
-        } => {
-            let library = Library::open(&state, &library)?;
-            let preview = library.preview_recover(&destination)?;
-            anyhow::ensure!(
-                preview.fingerprint == approve,
-                "stale approval; review preview again"
-            );
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&library.apply_recover(&preview)?)?
-            );
-        }
+        Command::Maintenance(command) => maintenance::run(command, &state)?,
         #[cfg(target_os = "linux")]
         Command::AuditLinks { library } => {
             let library = Library::open(&state, &library)?;
@@ -214,42 +180,63 @@ fn main() -> Result<()> {
             mcp,
         } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
-            let snapshot = load_snapshot(&catalog)?;
-            let index = CatalogIndex::build(
-                vec![RegistryInput {
-                    id: registry_id,
-                    priority: 0,
-                    approved: true,
-                    enabled: true,
-                    catalog: snapshot.catalog,
-                }],
+            scan_fixture(
+                &mut state,
+                &args.state,
+                &root,
+                &catalog,
+                registry_id,
                 &extension,
-            )?;
-            let root = root.canonicalize()?;
-            let settings = Settings {
                 mcp,
-                ..Settings::default()
-            };
-            let attempt = state
-                .scan(&root, &index, &settings, &AtomicBool::new(false))
-                .cloned();
-            state.save(&args.state)?;
-            let scan = attempt?;
-            let project = state
-                .projects
-                .get(&root)
-                .context("registered project disappeared")?;
-            // Explicit synthetic fixture mode is not a production online session.
-            let evaluation = project.reevaluate(
-                &index,
-                &settings,
-                true,
-                &BTreeSet::new(),
-                &BTreeMap::new(),
-                &BTreeSet::new(),
             )?;
-            println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
         }
     }
+    Ok(())
+}
+
+fn scan_fixture(
+    state: &mut State,
+    state_path: &std::path::Path,
+    root: &std::path::Path,
+    catalog: &std::path::Path,
+    registry_id: String,
+    extension: &str,
+    mcp: bool,
+) -> Result<()> {
+    let snapshot = load_snapshot(catalog)?;
+    let index = CatalogIndex::build(
+        vec![RegistryInput {
+            id: registry_id,
+            priority: 0,
+            approved: true,
+            enabled: true,
+            catalog: snapshot.catalog,
+        }],
+        extension,
+    )?;
+    let root = root.canonicalize()?;
+    let settings = Settings {
+        mcp,
+        ..Settings::default()
+    };
+    let attempt = state
+        .scan(&root, &index, &settings, &AtomicBool::new(false))
+        .cloned();
+    state.save(state_path)?;
+    let scan = attempt?;
+    let project = state
+        .projects
+        .get(&root)
+        .context("registered project disappeared")?;
+    // Explicit synthetic fixture mode is not a production online session.
+    let evaluation = project.reevaluate(
+        &index,
+        &settings,
+        true,
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
     Ok(())
 }
