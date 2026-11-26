@@ -7,6 +7,7 @@ use crate::library_io::{directory, invalid, read, relative};
 use crate::{Error, State};
 use rustix::fs::{Mode, OFlags, openat};
 use serde::{Deserialize, Serialize};
+use serde_saphyr::granit_parser::{Scanner, StrInput, TokenType};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -276,8 +277,22 @@ fn manifest(bytes: &[u8]) -> Result<String, Error> {
             return Err(invalid("frontmatter limit"));
         }
     }
-    if !closed || header.contains(['&', '*', '!', '%']) {
+    if !closed {
         return Err(invalid("unsupported skill frontmatter"));
+    }
+    // The Serde decoder accepts standard explicit tags and YAML directives.
+    // Inspect tokens first so even syntax on ignored fields is rejected.
+    for token in Scanner::new(StrInput::new(&header)) {
+        let token = token.map_err(|_| invalid("invalid skill frontmatter"))?;
+        if matches!(
+            token.token_type(),
+            TokenType::Tag(..)
+                | TokenType::VersionDirective(..)
+                | TokenType::TagDirective(..)
+                | TokenType::ReservedDirective(..)
+        ) {
+            return Err(invalid("unsupported skill frontmatter"));
+        }
     }
     let doc: serde_json::Value = serde_saphyr::from_str_with_options(
         &header,
@@ -423,5 +438,56 @@ mod tests {
         assert_eq!(library.get(&first.id)?, first);
         assert!(Library::open(&State::default(), central.path()).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn description_accepts_yaml_punctuation_as_text() {
+        for description in [
+            "Build & test",
+            "'Build & test * ! %'",
+            "|\n  Build & test\n  %YAML 1.2\n  *example !text",
+        ] {
+            let skill = format!("---\nname: build-test\ndescription: {description}\n---\n");
+            assert!(matches!(manifest(skill.as_bytes()), Ok(name) if name == "build-test"));
+        }
+    }
+
+    #[test]
+    fn rejects_yaml_syntax_in_frontmatter() {
+        for header in [
+            "name: build\ndescription: &unused Build",
+            "name: build\ndescription: *missing",
+            "name: build\ndescription: !custom Build",
+            "name: build\ndescription: !!str Build",
+            "name: build\ndescription: Build\nmetadata: {!!str key: value}",
+            "%YAML 1.2\n--- {name: build, description: Build}",
+            "%TAG !x! tag:example.com,2026:\n--- {name: build, description: Build}",
+            "%RESERVED data\n--- {name: build, description: Build}",
+            "name: build\nname: test\ndescription: Build",
+        ] {
+            let skill = format!("---\n{header}\n---\n");
+            assert!(manifest(skill.as_bytes()).is_err(), "{header}");
+        }
+    }
+
+    #[test]
+    fn preserves_frontmatter_validation() {
+        for header in [
+            "name: Bad-name\ndescription: Build".to_owned(),
+            "name: build--test\ndescription: Build".to_owned(),
+            "name: build\ndescription: true".to_owned(),
+            r#"name: build
+description: "Build\tTest""#
+                .to_owned(),
+            format!("name: build\ndescription: {}", "a".repeat(1025)),
+            format!(
+                "name: build\ndescription: Build\n# {}",
+                "a".repeat(MAX_FRONTMATTER_BYTES)
+            ),
+        ] {
+            let skill = format!("---\n{header}\n---\n");
+            assert!(manifest(skill.as_bytes()).is_err());
+        }
+        assert!(manifest(b"---\nname: build\ndescription: Build\n").is_err());
     }
 }
