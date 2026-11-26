@@ -34,4 +34,30 @@ Unlink removes one reason. The CLI defaults to `manual` and also accepts `recomm
 
 Update stages and verifies the replacement and atomically exchanges it with the existing library object. The fixture ID and manifest name stay the same, and managed links continue to reference the same path. Updates require a filesystem with Linux rename-exchange support.
 
+## Batch change plans
+
+One shared planning service reviews installs, unlinks and library updates together. Write the requests to a JSON file (at most 256 changes, 1 MiB):
+
+```json
+{"changes": [
+  {"action": "install_link", "project": "/absolute/project", "target": ".agents/skills",
+   "artifact": "urn:nosey:fixture:sample", "reason": {"kind": "manual"}},
+  {"action": "unlink_managed", "destination": "/absolute/project/.agents/skills/old",
+   "reason": {"kind": "preset", "id": "web"}},
+  {"action": "update_library_skill", "artifact": "urn:nosey:fixture:sample",
+   "source": "/absolute/fixture-skill-v2"}
+]}
+```
+
+```text
+plan <library> <requests.json> [--only <change-id>]...
+apply-plan <library> <requests.json> [--only <change-id>]... --approve <plan-fingerprint>
+```
+
+`plan` previews every request without changing anything. Duplicate requests collapse to one change, and each change gets a stable ID. A request that cannot be previewed, or whose destination is occupied, unowned or needs recovery, is listed with a `blocker` and is never executed. The plan fingerprint covers every listed change, so approval applies to exactly the reviewed set; use `--only` to plan and approve a subset. `apply-plan` refuses the whole batch before any mutation if the fresh plan no longer matches the approval.
+
+Approved changes then run independently: unlinks first, then installs, then library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings, configured agent targets and shared acquisition are not part of this slice yet.
+
+## Limitations
+
 The library lock coordinates cooperating operations within one private library. Keep project targets stable while applying changes. Linux does not offer a conditional unlink by inode, so an external writer can still race the final check. Private central storage must be protected from concurrent external writes. Frontmatter validation is intentionally conservative, and power-loss recovery has not been tested.

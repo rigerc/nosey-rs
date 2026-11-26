@@ -21,6 +21,9 @@ mod freshness;
 pub mod library;
 #[cfg(target_os = "linux")]
 mod library_io;
+/// Shared batch change planning with per-item outcomes.
+#[cfg(target_os = "linux")]
+pub mod plan;
 mod project_activity;
 /// Native read-only project target discovery.
 pub mod skill_discovery;

@@ -3,6 +3,8 @@
 
 #[cfg(target_os = "linux")]
 mod maintenance;
+#[cfg(target_os = "linux")]
+mod plan;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -73,6 +75,9 @@ enum Command {
     #[cfg(target_os = "linux")]
     #[command(flatten)]
     Maintenance(maintenance::Command),
+    #[cfg(target_os = "linux")]
+    #[command(flatten)]
+    Plan(plan::Command),
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -163,6 +168,8 @@ fn main() -> Result<()> {
         }
         #[cfg(target_os = "linux")]
         Command::Maintenance(command) => maintenance::run(command, &state)?,
+        #[cfg(target_os = "linux")]
+        Command::Plan(command) => plan::run(command, &state)?,
         #[cfg(target_os = "linux")]
         Command::AuditLinks { library } => {
             let library = Library::open(&state, &library)?;
