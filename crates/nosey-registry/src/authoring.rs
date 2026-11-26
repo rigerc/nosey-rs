@@ -24,6 +24,8 @@ pub fn read_bounded(path: &Path, max: usize) -> Result<Vec<u8>, Error> {
     }
     Ok(result)
 }
+const MAX_ENTITY_BYTES: usize = 256 * 1024;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
@@ -34,7 +36,7 @@ struct Manifest {
     intelligence_extension: String,
 }
 fn yaml<T: DeserializeOwned>(path: &Path) -> Result<T, Error> {
-    let bytes = read_bounded(path, 256 * 1024)?;
+    let bytes = read_bounded(path, MAX_ENTITY_BYTES)?;
     let text = std::str::from_utf8(&bytes).map_err(|_| Error::Invalid("non-UTF-8 YAML".into()))?;
     // Conservative restricted authoring subset: deny aliases, anchors, tags and directives before parsing.
     // Quoted regexes containing these characters are currently rejected as well.
@@ -43,7 +45,21 @@ fn yaml<T: DeserializeOwned>(path: &Path) -> Result<T, Error> {
             "YAML anchors, aliases, tags and directives prohibited in this authoring subset".into(),
         ));
     }
-    serde_yaml::from_str(text).map_err(|_| Error::Invalid("invalid YAML entity".into()))
+    serde_saphyr::from_str_with_options(
+        text,
+        serde_saphyr::options! {
+            duplicate_keys: serde_saphyr::options::DuplicateKeyPolicy::Error,
+            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
+            budget: serde_saphyr::budget! {
+                max_documents: 1,
+                max_depth: 64,
+                max_anchors: 0,
+                max_aliases: 0,
+                max_total_scalar_bytes: MAX_ENTITY_BYTES,
+            },
+        },
+    )
+    .map_err(|_| Error::Invalid("invalid YAML entity".into()))
 }
 fn entities<T: DeserializeOwned>(root: &Path, folder: &str) -> Result<Vec<T>, Error> {
     let dir = root.join(folder);
