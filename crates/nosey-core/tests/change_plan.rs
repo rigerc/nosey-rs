@@ -340,7 +340,7 @@ fn global_plan_preserves_unmanaged_links_and_settings_preserve_managed_links() -
     assert!(f.library.apply_plan(&f.state, &plan).is_err());
     assert_eq!(f.library.plan(&f.state, &requests)?.eligible(), 0);
     assert_eq!(fs::read_link(&preexisting)?, f.sources);
-    assert!(f.library.audit_links(&f.state)?.is_empty());
+    assert_eq!(f.library.audit_links(&f.state)?, Vec::new());
     fs::remove_file(&preexisting)?;
 
     let plan = f.library.plan(&f.state, &requests)?;

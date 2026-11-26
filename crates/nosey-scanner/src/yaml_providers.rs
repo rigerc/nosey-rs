@@ -5,11 +5,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 fn parse(text: &str) -> Result<Value, &'static str> {
-    // Deliberately reject even quoted occurrences; avoids alias expansion
-    // and custom tags prior to decoding. False exclusions are incomplete.
-    if text.contains(['&', '*', '!', '%']) {
-        return Err("unsupported-provider-yaml");
-    }
+    nosey_registry::validate_yaml_tokens(text).map_err(|_| "unsupported-provider-yaml")?;
     let v: Value = serde_saphyr::from_str_with_options(
         text,
         serde_saphyr::options! {
@@ -114,6 +110,20 @@ pub fn actions(text: &str) -> Result<BTreeSet<String>, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn distinguishes_scalar_punctuation_from_yaml_syntax() {
+        assert!(parse("command: a && b * c ! https://example.test/a%20b").is_ok());
+        assert!(parse("run: |\n  echo ! && echo *").is_ok());
+        for input in [
+            "a: &anchor value",
+            "a: *alias",
+            "a: !!str value",
+            "%YAML 1.2\n---\na: b",
+        ] {
+            assert!(parse(input).is_err(), "{input}");
+        }
+    }
+
     #[test]
     fn rejects_duplicate_keys() {
         assert!(compose("services: {app: {image: first, image: second}}").is_err());

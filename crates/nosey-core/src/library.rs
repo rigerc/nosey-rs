@@ -4,8 +4,10 @@
 //!
 //! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 
+mod cleanup;
 pub(crate) mod manifest;
 mod update;
+pub use cleanup::{CleanupReport, RemovePreview};
 pub use update::UpdatePreview;
 
 use manifest::manifest;
@@ -200,15 +202,9 @@ impl Library {
     pub fn get(&self, id: &str) -> Result<SkillRecord, Error> {
         validate_id(id)?;
         let dir = self.object_dir(id);
-        let fd = directory(&dir)?;
-        let record: SkillRecord =
-            serde_json::from_slice(&read(&fd, Path::new("record.json"), MAX_RECORD)?)?;
+        let record = verified_record(&dir)?;
         if record.id != id {
             return Err(invalid("library identity mismatch"));
-        }
-        let (digest, name) = tree(&dir.join("skill"), None)?;
-        if digest != record.source.tree_sha256 || name != record.name {
-            return Err(invalid("library content changed"));
         }
         Ok(record)
     }
@@ -306,7 +302,15 @@ impl Library {
                 .ok_or_else(|| invalid("object name"))?,
             flags,
         )
-        .map_err(std::io::Error::from)?;
+        .map_err(|error| {
+            if flags == rustix::fs::RenameFlags::EXCHANGE
+                && matches!(error, rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS)
+            {
+                invalid("library update requires filesystem and kernel support for RENAME_EXCHANGE")
+            } else {
+                std::io::Error::from(error).into()
+            }
+        })?;
         rustix::fs::fsync(&parent).map_err(std::io::Error::from)?;
         Ok(())
     }
@@ -376,6 +380,17 @@ fn tree(source: &Path, copy: Option<&Path>) -> Result<(String, String), Error> {
         format!("{:x}", digest.finalize()),
         name.ok_or_else(|| invalid("missing root SKILL.md"))?,
     ))
+}
+
+fn verified_record(dir: &Path) -> Result<SkillRecord, Error> {
+    let fd = directory(dir)?;
+    let record: SkillRecord =
+        serde_json::from_slice(&read(&fd, Path::new("record.json"), MAX_RECORD)?)?;
+    let (digest, name) = tree(&dir.join("skill"), None)?;
+    if digest != record.source.tree_sha256 || name != record.name {
+        return Err(invalid("library content changed"));
+    }
+    Ok(record)
 }
 
 #[cfg(test)]

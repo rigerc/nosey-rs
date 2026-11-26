@@ -28,11 +28,11 @@ preview-update <library> <fixture-id> <fixture-source>
 apply-update <library> <fixture-id> <fixture-source> --approve <fingerprint>
 ```
 
-Recovery can drop an unresolved record when the destination is absent under its original parent, or confirm an exact pending symlink after checking the artifact digest and parent identity. It changes only the journal. Pending journals created before digest tracking can be cleared if the destination is absent, but cannot be confirmed from target bytes alone.
+Recovery can drop an unresolved record when the destination is absent under its original parent, or confirm an exact pending symlink after checking the artifact digest and parent identity. It changes only the journal. Dropping a journal is the only recovery action for pending records created before digest tracking. The destination must be absent under the original parent.
 
-Unlink removes one reason. The CLI defaults to `manual` and also accepts `recommendation` and `preset:<id>`. When the last reason is removed, Nosey verifies the original parent, symlink inode and target bytes immediately before descriptor-relative unlink. A crash after unlink can leave a journal for the now-missing symlink.
+Unlink removes one reason. The CLI defaults to `manual` and also accepts `recommendation` and `preset:<id>`. When the last reason is removed, Nosey verifies the original parent, symlink inode and target bytes immediately before descriptor-relative unlink. This also works when the library content is missing or damaged. The final `unlinkat` cannot be conditional on inode, so another process writing the same directory can race the last check. A crash after unlink can leave a journal for the now-missing symlink.
 
-Update stages and verifies the replacement and atomically exchanges it with the existing library object. The fixture ID and manifest name stay the same, and managed links continue to reference the same path. Updates require a filesystem with Linux rename-exchange support.
+Update stages and verifies the replacement and atomically exchanges it with the existing library object. The fixture ID and manifest name stay the same, and managed links continue to reference the same path. Updates require kernel and filesystem support for `RENAME_EXCHANGE`. An unsupported exchange returns a capability error and preserves the active copy.
 
 ## Batch change plans
 
@@ -83,3 +83,16 @@ outside this slice.
 ## Limitations
 
 The library lock coordinates cooperating operations within one private library. Keep project targets stable while applying changes. Linux does not offer a conditional unlink by inode, so an external writer can still race the final check. Private central storage must be protected from concurrent external writes. Frontmatter validation is intentionally conservative, and power-loss recovery has not been tested.
+
+## Library cleanup
+
+```text
+cleanup-report <library>
+preview-removed-source <library> <stored-source-path>
+preview-remove-unused <library> <fixture-id> [--external-references-checked]
+apply-remove-unused <library> <fixture-id> --external-references-checked --approve <fingerprint>
+```
+
+Source removal review preserves the copies it lists. Every recorded link or journal, including those retained after unregistering a project, blocks removal. Use `--external-references-checked` only after ruling out unmanaged references to the exact copy. The library cannot enumerate arbitrary external paths.
+
+In a plan, use `{"action":"remove_unused_library_skill","artifact":"urn:nosey:fixture:sample","external_references_checked":true}`. Removal runs after link changes. If an unlink clears the final reference, preview removal again so the approval reflects the new inventory.

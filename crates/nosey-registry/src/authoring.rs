@@ -38,13 +38,11 @@ struct Manifest {
 fn yaml<T: DeserializeOwned>(path: &Path) -> Result<T, Error> {
     let bytes = read_bounded(path, MAX_ENTITY_BYTES)?;
     let text = std::str::from_utf8(&bytes).map_err(|_| Error::Invalid("non-UTF-8 YAML".into()))?;
-    // Conservative restricted authoring subset: deny aliases, anchors, tags and directives before parsing.
-    // Quoted regexes containing these characters are currently rejected as well.
-    if text.contains(['&', '*', '!', '%']) {
-        return Err(Error::Invalid(
-            "YAML anchors, aliases, tags and directives prohibited in this authoring subset".into(),
-        ));
-    }
+    parse_yaml(text)
+}
+
+fn parse_yaml<T: DeserializeOwned>(text: &str) -> Result<T, Error> {
+    crate::validate_yaml_tokens(text)?;
     serde_saphyr::from_str_with_options(
         text,
         serde_saphyr::options! {
@@ -157,4 +155,23 @@ pub fn compile(root: &Path) -> Result<Vec<u8>, Error> {
         .into_bytes();
     parse_catalog(&bytes)?;
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn yaml_accepts_scalar_punctuation_and_rejects_restricted_syntax() {
+        assert!(super::parse_yaml::<serde_json::Value>("value: a && b * c ! %20").is_ok());
+        for input in [
+            "a: &anchor value",
+            "a: *alias",
+            "a: !!str value",
+            "%YAML 1.2\n---\na: b",
+        ] {
+            assert!(
+                super::parse_yaml::<serde_json::Value>(input).is_err(),
+                "{input}"
+            );
+        }
+    }
 }

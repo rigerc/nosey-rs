@@ -91,8 +91,20 @@ pub struct InstallPreview {
     pub fingerprint: String,
 }
 
+/// Connection between a journal and its recorded destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JournalConnection {
+    /// The journal never recorded a confirmed inode.
+    Pending,
+    /// The destination still matches the recorded symlink.
+    Connected,
+    /// Confirmed ownership can no longer be established.
+    Disconnected,
+}
+
 /// Read-only ownership and retained-reference report.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LinkAudit {
     /// Artifact identifier.
     pub artifact: String,
@@ -100,6 +112,8 @@ pub struct LinkAudit {
     pub project: PathBuf,
     /// Destination path.
     pub destination: PathBuf,
+    /// Source path recorded in the journal.
+    pub source: PathBuf,
     /// Independent retained reasons.
     pub reasons: BTreeSet<InstallReason>,
     /// True if project is no longer registered.
@@ -107,12 +121,17 @@ pub struct LinkAudit {
     /// Whether the original install used a global agent location.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub global: bool,
+    /// Ownership evidence at the recorded destination.
+    pub connection: JournalConnection,
+    /// The recorded artifact is missing or fails verification.
+    pub artifact_unavailable: bool,
     /// Current observed ownership status.
     pub status: Status,
 }
 
 /// Longest accepted preset identity in an install reason.
 const MAX_PRESET_ID: usize = 128;
+const MAX_JOURNAL_ENTRIES: usize = 4096;
 
 fn name(path: &Path) -> Result<&Path, Error> {
     path.file_name()
@@ -396,11 +415,11 @@ impl Library {
         let dir = self.root.join("links");
         let fd = directory(&dir)?;
         let mut result = Vec::new();
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            if result.len() >= 4096 {
+        for (index, entry) in std::fs::read_dir(&dir)?.enumerate() {
+            if index >= MAX_JOURNAL_ENTRIES {
                 return Err(invalid("journal entry limit"));
             }
+            let entry = entry?;
             let path = entry.path();
             if path.extension().is_none_or(|e| e != "json") {
                 continue;
@@ -413,22 +432,32 @@ impl Library {
                 .destination
                 .parent()
                 .ok_or_else(|| invalid("journal parent"))?;
-            let status = if self.get(&r.artifact).is_ok()
-                && r.source == self.object_dir(&r.artifact).join("skill")
-            {
-                directory(parent)
-                    .and_then(|p| classify(&p, name(&r.destination)?, &r.source, Some(&r)))
-                    .unwrap_or(Status::RecoveryRequired)
-            } else {
-                Status::RecoveryRequired
-            };
+            let artifact_unavailable = self.get(&r.artifact).is_err();
+            let observed = directory(parent)
+                .and_then(|p| classify(&p, name(&r.destination)?, &r.source, Some(&r)))
+                .unwrap_or(Status::RecoveryRequired);
+            let status =
+                if artifact_unavailable || r.source != self.object_dir(&r.artifact).join("skill") {
+                    Status::RecoveryRequired
+                } else {
+                    observed
+                };
             result.push(LinkAudit {
                 artifact: r.artifact,
                 detached: !r.global && !state.projects.contains_key(&r.project),
                 global: r.global,
                 project: r.project,
                 destination: r.destination,
+                source: r.source,
                 reasons: r.reasons,
+                connection: if r.link_identity.is_none() {
+                    JournalConnection::Pending
+                } else if observed == Status::Managed {
+                    JournalConnection::Connected
+                } else {
+                    JournalConnection::Disconnected
+                },
+                artifact_unavailable,
                 status,
             });
         }
