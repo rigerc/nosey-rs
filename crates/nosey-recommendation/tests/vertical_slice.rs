@@ -1,6 +1,6 @@
 //! Test-first acceptance cases for the synthetic project-wide vertical slice.
 #![forbid(unsafe_code)]
-use nosey_recommendation::{Group, evaluate, removal_candidates};
+use nosey_recommendation::{Group, evaluate_with_token_estimates, removal_candidates};
 use nosey_registry::{CatalogIndex, RegistryInput, compile, parse_catalog};
 use nosey_scanner::{Completeness, MatchKind, Settings, VersionKind, scan};
 use std::{
@@ -42,7 +42,16 @@ fn aggregate_and_recommend() -> Result<(), Box<dyn std::error::Error>> {
     }));
     let dismissed = BTreeSet::from(["urn:example:skill:alpha".into()]);
     let targets = BTreeSet::from(["agent-a".into()]);
-    let rec = evaluate(&index, &scan, &dismissed, &targets, &BTreeMap::new());
+    let rec = evaluate_with_token_estimates(
+        &index,
+        &scan,
+        &dismissed,
+        &targets,
+        &BTreeMap::new(),
+        |id| (id == "urn:example:skill:alpha").then_some(42),
+    );
+    assert_eq!(rec.recommendations[0].estimated_tokens, Some(42));
+    assert_eq!(rec.recommendations[1].estimated_tokens, None);
     assert_eq!(rec.recommendations.len(), 3);
     assert_eq!(
         rec.recommendations.first().map(|r| r.id.as_str()),

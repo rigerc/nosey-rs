@@ -1,16 +1,45 @@
 //! CLI entry points for shared change plans.
 
 use anyhow::{Result, ensure};
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use nosey_core::{
     State,
     library::Library,
     plan::{ChangeOutcome, ChangePlan, ChangeRequest, load_requests},
 };
+use nosey_registry::{CatalogIndex, RegistryInput, load_snapshot};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
+
+#[derive(Args)]
+pub struct CatalogSelection {
+    /// Review advisory metadata from this local catalog snapshot.
+    #[arg(long, requires = "registry_id")]
+    catalog: Option<PathBuf>,
+    /// Identity of the selected registry.
+    #[arg(long, requires = "catalog")]
+    registry_id: Option<String>,
+}
+
+impl CatalogSelection {
+    fn load(self) -> Result<Option<CatalogIndex>> {
+        let (Some(path), Some(id)) = (self.catalog, self.registry_id) else {
+            return Ok(None);
+        };
+        Ok(Some(CatalogIndex::build(
+            vec![RegistryInput {
+                id,
+                priority: 0,
+                approved: true,
+                enabled: true,
+                catalog: load_snapshot(&path)?.catalog,
+            }],
+            "",
+        )?))
+    }
+}
 
 #[derive(Subcommand)]
 /// Change plan subcommands flattened into the main CLI.
@@ -22,6 +51,8 @@ pub enum Command {
         /// Restrict the plan to these change IDs (repeatable).
         #[arg(long)]
         only: Vec<String>,
+        #[command(flatten)]
+        catalog: CatalogSelection,
     },
     /// Apply exactly the reviewed plan identified by its fingerprint.
     ApplyPlan {
@@ -30,6 +61,8 @@ pub enum Command {
         /// Restrict the plan to these change IDs (repeatable).
         #[arg(long)]
         only: Vec<String>,
+        #[command(flatten)]
+        catalog: CatalogSelection,
         #[arg(long)]
         approve: String,
     },
@@ -67,24 +100,32 @@ pub fn run(command: Command, state: &State) -> Result<()> {
             library,
             requests,
             only,
+            catalog,
         } => {
             let library = Library::open(state, &library)?;
             let requests = select(&library, state, &requests, &only)?;
+            let catalog = catalog.load()?;
             println!(
                 "{}",
-                serde_json::to_string_pretty(&library.plan(state, &requests)?)?
+                serde_json::to_string_pretty(&library.plan_with_catalog(
+                    state,
+                    &requests,
+                    catalog.as_ref()
+                )?)?
             );
         }
         Command::ApplyPlan {
             library,
             requests,
             only,
+            catalog,
             approve,
         } => {
             let library = Library::open(state, &library)?;
             let requests = select(&library, state, &requests, &only)?;
-            let plan = library.plan(state, &requests)?;
-            review_or_apply(&library, state, &plan, Some(&approve))?;
+            let catalog = catalog.load()?;
+            let plan = library.plan_with_catalog(state, &requests, catalog.as_ref())?;
+            review_or_apply_with_catalog(&library, state, &plan, Some(&approve), catalog.as_ref())?;
         }
     }
     Ok(())
@@ -97,6 +138,16 @@ pub fn review_or_apply(
     plan: &ChangePlan,
     approve: Option<&str>,
 ) -> Result<()> {
+    review_or_apply_with_catalog(library, state, plan, approve, None)
+}
+
+fn review_or_apply_with_catalog(
+    library: &Library,
+    state: &State,
+    plan: &ChangePlan,
+    approve: Option<&str>,
+    catalog: Option<&CatalogIndex>,
+) -> Result<()> {
     let Some(approve) = approve else {
         println!("{}", serde_json::to_string_pretty(plan)?);
         return Ok(());
@@ -105,7 +156,7 @@ pub fn review_or_apply(
         plan.fingerprint == approve,
         "stale approval; review the plan again"
     );
-    let results = library.apply_plan(state, plan)?;
+    let results = library.apply_plan_with_catalog(state, plan, catalog)?;
     println!("{}", serde_json::to_string_pretty(&results)?);
     let unresolved = results
         .iter()

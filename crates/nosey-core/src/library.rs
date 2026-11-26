@@ -7,6 +7,7 @@
 mod acquisition;
 mod cleanup;
 pub(crate) mod manifest;
+mod tokens;
 pub use acquisition::AcquisitionPreview;
 pub use nosey_registry::BundleSource;
 mod update;

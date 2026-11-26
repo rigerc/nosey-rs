@@ -53,6 +53,9 @@ pub struct Recommendation {
     pub reasons: BTreeSet<Reason>,
     /// Group for display.
     pub group: Group,
+    /// Estimated tokens in the locally available skill body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_tokens: Option<usize>,
     /// Per-target coverage.
     pub coverage: BTreeMap<String, TargetState>,
 }
@@ -72,6 +75,19 @@ pub fn evaluate(
     dismissed: &BTreeSet<String>,
     targets: &BTreeSet<String>,
     coverage: &BTreeMap<String, BTreeMap<String, TargetState>>,
+) -> Evaluation {
+    evaluate_with_token_estimates(index, scan, dismissed, targets, coverage, |_| None)
+}
+
+/// Evaluate recommendations and annotate matches using a local token estimate provider.
+#[must_use]
+pub fn evaluate_with_token_estimates(
+    index: &CatalogIndex,
+    scan: &ScanResult,
+    dismissed: &BTreeSet<String>,
+    targets: &BTreeSet<String>,
+    coverage: &BTreeMap<String, BTreeMap<String, TargetState>>,
+    estimate: impl Fn(&str) -> Option<usize>,
 ) -> Evaluation {
     let mut result = Evaluation::default();
     let mut matches: BTreeMap<String, BTreeSet<Reason>> = BTreeMap::new();
@@ -134,6 +150,7 @@ pub fn evaluate(
             Group::Managed
         };
         result.recommendations.push(Recommendation {
+            estimated_tokens: estimate(&id),
             id: id.clone(),
             name: s.entry.display_name.clone().unwrap_or(id),
             registry: s.registry.clone(),

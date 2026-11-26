@@ -18,7 +18,7 @@ use std::{
 use std::cell::Cell;
 use zip::write::SimpleFileOptions;
 
-const SKILL: &str = "---\nname: example\ndescription: Synthetic skill\n---\n";
+const SKILL: &str = "---\nname: example\ndescription: Synthetic skill\n---\n12345";
 
 struct MemoryFetch {
     requests: Cell<usize>,
@@ -83,6 +83,7 @@ fn plan_acquires_once_then_installs_and_reuses_offline() -> Result<(), Box<dyn s
     };
     let plan = library.plan(&state, &[install.clone(), acquire.clone(), acquire])?;
     assert_eq!(plan.eligible(), 2);
+    assert_eq!(plan.changes[0].estimated_tokens, None);
     let results = library.apply_plan_with_fetch(&state, &plan, &fetch)?;
     assert!(results.iter().all(|r| r.outcome == ChangeOutcome::Applied));
     assert_eq!(fetch.requests.get(), 1);
@@ -106,6 +107,7 @@ fn plan_acquires_once_then_installs_and_reuses_offline() -> Result<(), Box<dyn s
         library.apply_plan(&state, &offline)?[0].outcome,
         ChangeOutcome::Applied
     );
+    assert_eq!(offline.changes[0].estimated_tokens, Some(2));
     assert!(project_root.join("skills/example/SKILL.md").is_file());
     assert!(project_root.join("offline/example/SKILL.md").is_file());
     Ok(())
@@ -168,5 +170,172 @@ fn scoped_install_waits_for_acquisition_in_the_same_plan() -> Result<(), Box<dyn
             .join(".agents/skills/example/SKILL.md")
             .is_file()
     );
+    Ok(())
+}
+
+#[test]
+fn catalog_advisories_cover_pending_and_managed_installs() -> Result<(), Box<dyn std::error::Error>>
+{
+    use nosey_core::{
+        changes::InstallReason,
+        plan::{ChangeOutcome, ChangeRequest, Warning},
+    };
+
+    let central = tempfile::Builder::new()
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()?;
+    let project = tempfile::tempdir()?;
+    let mut state = State::default();
+    let project = state.register(project.path())?;
+    let target = PathBuf::from("skills");
+    fs::create_dir(project.join(&target))?;
+    let library = Library::open(&state, central.path())?;
+    let bytes = archive("SKILL.md", SKILL.as_bytes())?;
+    let bundle = source(&bytes);
+    let fetch = MemoryFetch {
+        requests: Cell::new(0),
+        bytes: archive(
+            "SKILL.md",
+            SKILL.replace("name: example", "name: other").as_bytes(),
+        )?,
+    };
+    let mut other = source(&fetch.bytes);
+    other.artifact = OTHER.into();
+    let index = advisory_catalog(&bundle)?;
+
+    let install = |artifact: &str| ChangeRequest::InstallLink {
+        project: project.clone(),
+        target: target.clone(),
+        artifact: artifact.into(),
+        reason: InstallReason::Manual,
+    };
+    let other_install = install(OTHER);
+    let acquire = ChangeRequest::AcquireLibrarySkill {
+        install_name: Some("example".into()),
+        source: bundle.clone(),
+    };
+    let requests = [install(&bundle.artifact), acquire];
+    let plan = library.plan_with_catalog(&state, &requests, Some(&index))?;
+    let missing = Warning::MissingDependency {
+        reference: OTHER.into(),
+    };
+    let unknown = Warning::UnresolvedReference {
+        reference: UNRESOLVED.into(),
+    };
+    let conflict = Warning::DeclaredConflict {
+        reference: OTHER.into(),
+    };
+    assert_eq!(plan.changes[0].warnings, [missing, unknown.clone()]);
+    assert_eq!(plan.eligible(), 2);
+    assert_ne!(
+        plan.fingerprint,
+        library.plan(&state, &requests)?.fingerprint
+    );
+    assert!(library.apply_plan(&state, &plan).is_err());
+
+    library.acquire_bundle(&other, &fetch)?;
+    let unmanaged = project.join(&target).join("external");
+    let other_preview = library.preview(&state, &project, &target, OTHER, InstallReason::Manual)?;
+    std::os::unix::fs::symlink(other_preview.source, &unmanaged)?;
+    let with_unmanaged = library.plan_with_catalog(&state, &requests, Some(&index))?;
+    assert_eq!(
+        with_unmanaged.changes[0].warnings,
+        [conflict.clone(), unknown.clone()]
+    );
+    fs::remove_file(unmanaged)?;
+
+    let mut batch = requests.to_vec();
+    batch.push(other_install.clone());
+    let together = library.plan_with_catalog(&state, &batch, Some(&index))?;
+    assert_eq!(
+        together.changes[0].warnings,
+        [conflict.clone(), unknown.clone()]
+    );
+    let existing = library.plan(&state, &[other_install])?;
+    assert_eq!(
+        library.apply_plan(&state, &existing)?[0].outcome,
+        ChangeOutcome::Applied
+    );
+    let with_existing = library.plan_with_catalog(&state, &requests, Some(&index))?;
+    assert_eq!(with_existing.changes[0].warnings, [conflict, unknown]);
+    let fetch = MemoryFetch {
+        requests: Cell::new(0),
+        bytes,
+    };
+    let results =
+        library.apply_plan_with_catalog_and_fetch(&state, &with_existing, Some(&index), &fetch)?;
+    assert!(
+        results
+            .iter()
+            .all(|result| result.outcome == ChangeOutcome::Applied)
+    );
+    Ok(())
+}
+
+const OTHER: &str = "urn:example:skill:other";
+const UNRESOLVED: &str = "urn:example:skill:unknown";
+const UNSUPPORTED: &str = "urn:example:skill:unsupported";
+
+fn advisory_catalog(
+    bundle: &BundleSource,
+) -> Result<nosey_registry::CatalogIndex, Box<dyn std::error::Error>> {
+    use nosey_registry::{CatalogIndex, RegistryInput, parse_catalog};
+    use serde_json::json;
+
+    let document = json!({
+        "specVersion": "1.0",
+        "entries": [
+            {
+                "identifier": bundle.artifact.as_str(),
+                "type": "application/agent-skills+md",
+                "url": "https://example.org/example/SKILL.md",
+                "extensions": {"io.example.nosey.skill": {
+                    "schemaVersion": "1.4.2", "installName": "example",
+                    "dependencies": [OTHER, UNRESOLVED], "conflicts": [OTHER]
+                }}
+            },
+            {
+                "identifier": OTHER,
+                "type": "application/agent-skills+md",
+                "url": "https://example.org/other/SKILL.md",
+                "extensions": {"io.example.nosey.skill": {"schemaVersion": "1.0.0", "installName": "other"}}
+            },
+            {
+                "identifier": UNSUPPORTED,
+                "type": "application/agent-skills+md",
+                "url": "https://example.org/unsupported/SKILL.md",
+                "extensions": {"io.example.nosey.skill": {"schemaVersion": "2.0.0"}}
+            }
+        ]
+    });
+    Ok(CatalogIndex::build(
+        vec![RegistryInput {
+            id: bundle.registry.clone(),
+            priority: 0,
+            approved: true,
+            enabled: true,
+            catalog: parse_catalog(&serde_json::to_vec(&document)?)?,
+        }],
+        "",
+    )?)
+}
+
+#[test]
+fn catalog_index_retains_standard_entries_and_reports_diagnostics()
+-> Result<(), Box<dyn std::error::Error>> {
+    let index = advisory_catalog(&source(&[]))?;
+    assert!(
+        index
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(UNRESOLVED))
+    );
+    assert!(
+        index
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("unsupported"))
+    );
+    assert!(index.skills[UNSUPPORTED].extension.is_none());
     Ok(())
 }

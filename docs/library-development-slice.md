@@ -50,13 +50,28 @@ One shared planning service reviews installs, unlinks, bundle acquisitions and l
 ```
 
 ```text
-plan <library> <requests.json> [--only <change-id>]...
-apply-plan <library> <requests.json> [--only <change-id>]... --approve <plan-fingerprint>
+plan <library> <requests.json> [--only <change-id>]... [--catalog <snapshot> --registry-id <id>]
+apply-plan <library> <requests.json> [--only <change-id>]... [--catalog <snapshot> --registry-id <id>] --approve <plan-fingerprint>
 ```
 
 `plan` previews every request without changing anything. Duplicate requests collapse to one change, and each change gets a stable ID. A request that cannot be previewed, or whose destination is occupied, unowned or needs recovery, is listed with a `blocker` and is never executed. The plan fingerprint covers every listed change, so approval applies to exactly the reviewed set; use `--only` to plan and approve a subset. `apply-plan` refuses the whole batch before any mutation if the fresh plan no longer matches the approval.
 
-Approved changes run in order: unlinks, bundle acquisitions, installs and library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings remain outside this slice.
+Approved changes run in order: unlinks, bundle acquisitions, installs and library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again.
+
+Supply the same local snapshot and registry ID when reviewing and applying a
+catalog-aware plan. The skill extension supplies canonical dependency and conflict
+references. The plan compares them with eligible installs and managed links in the
+same scope, plus unmanaged symlinks that point directly to a verified
+local library artifact. Missing dependencies, declared conflicts and unresolved
+references appear in `warnings` and are covered by the approval fingerprint.
+Dependencies are never queued automatically, and advisory warnings leave
+eligibility unchanged.
+
+For a skill already in the central library, `estimated_tokens` is the UTF-8 byte
+count of the `SKILL.md` body after frontmatter, divided by four and rounded up.
+The estimate is informational and uses local content only. Recommendation callers
+can supply `Library::estimate_skill_tokens` through
+`evaluate_with_token_estimates`, returning no estimate for unavailable content.
 
 ## Configured targets and inventory
 
