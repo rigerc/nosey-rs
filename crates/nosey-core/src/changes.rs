@@ -4,13 +4,18 @@
 //! Unlike Kitter, no occupied path is replaced, and no unmanaged link adopted.
 //! Pending journal records survive an interrupted apply.
 
+use crate::presets::MAX_PRESET_ID;
+
+mod audit;
 mod maintenance;
+pub use audit::{JournalConnection, LinkAudit};
 pub use maintenance::{LinkAction, LinkPreview};
 
 use crate::{
     Error, State,
     library::{Library, MAX_RECORD, atomic_json, hash},
     library_io::{descend, directory, identity, invalid, read, relative, stat, stat_identity},
+    targets::InstallScope,
 };
 use rustix::fs::{FileType, readlinkat, symlinkat};
 use serde::{Deserialize, Serialize};
@@ -50,6 +55,8 @@ pub enum Status {
 #[serde(deny_unknown_fields)]
 struct LinkRecord {
     project: PathBuf,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    global: bool,
     destination: PathBuf,
     artifact: String,
     source: PathBuf,
@@ -61,21 +68,25 @@ struct LinkRecord {
     tree_sha256: Option<String>,
 }
 
-/// Explicit read-only preview for a single project-local installation.
+/// Explicit read-only preview for a single installation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallPreview {
-    /// Registered canonical project.
+    /// Registered project or supplied home directory.
     pub project: PathBuf,
+    /// Whether this preview installs into a global agent location.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub global: bool,
     /// Explicit existing project-relative target directory.
     pub target: PathBuf,
-    /// Fixture artifact identity.
+    /// Canonical artifact identity.
     pub artifact: String,
     /// Exact destination path.
     pub destination: PathBuf,
     /// Active central skill directory.
     pub source: PathBuf,
-    /// Local tree digest checked at preview.
+    /// Local tree digest when the artifact is already available.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub tree_sha256: String,
     /// Independent reason requested.
     pub reason: InstallReason,
@@ -84,26 +95,6 @@ pub struct InstallPreview {
     /// Fingerprint of complete preview state, supplied for explicit apply.
     pub fingerprint: String,
 }
-
-/// Read-only ownership and retained-reference report.
-#[derive(Debug, Clone, Serialize)]
-pub struct LinkAudit {
-    /// Artifact identifier.
-    pub artifact: String,
-    /// Original registered project path, even after unregister.
-    pub project: PathBuf,
-    /// Destination path.
-    pub destination: PathBuf,
-    /// Independent retained reasons.
-    pub reasons: BTreeSet<InstallReason>,
-    /// True if project is no longer registered.
-    pub detached: bool,
-    /// Current observed ownership status.
-    pub status: Status,
-}
-
-/// Longest accepted preset identity in an install reason.
-const MAX_PRESET_ID: usize = 128;
 
 fn name(path: &Path) -> Result<&Path, Error> {
     path.file_name()
@@ -198,6 +189,26 @@ impl Library {
         artifact: &str,
         reason: InstallReason,
     ) -> Result<InstallPreview, Error> {
+        let skill = self.get(artifact)?;
+        self.preview_skill(
+            state,
+            project,
+            target,
+            artifact,
+            reason,
+            (&skill.name, &skill.source.tree_sha256),
+        )
+    }
+
+    pub(crate) fn preview_skill(
+        &self,
+        state: &State,
+        project: &Path,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+        skill: (&str, &str),
+    ) -> Result<InstallPreview, Error> {
         let project = project.canonicalize()?;
         if !state.projects.contains_key(&project)
             || project.starts_with(&self.root)
@@ -205,21 +216,81 @@ impl Library {
         {
             return Err(invalid("unregistered or overlapping project"));
         }
+        self.preview_at(project, false, target, artifact, reason, skill)
+    }
+
+    pub(crate) fn preview_scoped(
+        &self,
+        state: &State,
+        scope: &InstallScope,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+    ) -> Result<InstallPreview, Error> {
+        let skill = self.get(artifact)?;
+        self.preview_scoped_skill(
+            state,
+            scope,
+            target,
+            artifact,
+            reason,
+            (&skill.name, &skill.source.tree_sha256),
+        )
+    }
+
+    /// Scoped preview for an artifact that may still be pending acquisition.
+    pub(crate) fn preview_scoped_skill(
+        &self,
+        state: &State,
+        scope: &InstallScope,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+        skill: (&str, &str),
+    ) -> Result<InstallPreview, Error> {
+        let global = matches!(scope, InstallScope::Global { .. });
+        if !state.targets().paths(global).contains(target) {
+            return Err(invalid("target is not enabled for this scope"));
+        }
+        match scope {
+            InstallScope::Project { root } => {
+                self.preview_skill(state, root, target, artifact, reason, skill)
+            }
+            InstallScope::Global { home } => {
+                let destination = home.join(target);
+                if destination.starts_with(&self.root) || self.root.starts_with(&destination) {
+                    return Err(invalid("global target overlaps the library"));
+                }
+                self.preview_at(home.clone(), true, target, artifact, reason, skill)
+            }
+        }
+    }
+
+    fn preview_at(
+        &self,
+        project: PathBuf,
+        global: bool,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+        skill: (&str, &str),
+    ) -> Result<InstallPreview, Error> {
         if let InstallReason::Preset(id) = &reason
             && (id.is_empty() || id.len() > MAX_PRESET_ID || id.chars().any(char::is_control))
         {
             return Err(invalid("invalid preset reason"));
         }
         let target = relative(target)?;
-        let skill = self.get(artifact)?;
+        let (skill_name, digest) = skill;
+        crate::library::skill_name(skill_name)?;
         let parent = target_dir(&project, &target)?;
-        let destination = project.join(&target).join(&skill.name);
+        let destination = project.join(&target).join(skill_name);
         let source = self.object_dir(artifact).join("skill");
         let record = self.link_record(&destination)?;
-        let status = classify(&parent, Path::new(&skill.name), &source, record.as_ref())?;
+        let status = classify(&parent, Path::new(skill_name), &source, record.as_ref())?;
         let status = if record
             .as_ref()
-            .is_some_and(|r| r.artifact != artifact || r.project != project)
+            .is_some_and(|r| r.artifact != artifact || r.project != project || r.global != global)
         {
             Status::RecoveryRequired
         } else {
@@ -227,11 +298,12 @@ impl Library {
         };
         let mut preview = InstallPreview {
             project,
+            global,
             target,
             artifact: artifact.into(),
             destination,
             source,
-            tree_sha256: skill.source.tree_sha256,
+            tree_sha256: digest.into(),
             reason,
             status,
             fingerprint: String::new(),
@@ -255,14 +327,58 @@ impl Library {
     /// Rejects stale, occupied, recovery-needed or unsafe changes. A crash or
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
+        self.apply_install(state, approved, None)
+    }
+
+    pub(crate) fn apply_install(
+        &self,
+        state: &State,
+        approved: &InstallPreview,
+        acquisition: Option<&crate::plan::AcquisitionSource>,
+    ) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
-        let fresh = self.preview(
-            state,
-            &approved.project,
-            &approved.target,
-            &approved.artifact,
-            approved.reason.clone(),
-        )?;
+        self.apply_install_locked(state, approved, acquisition)
+    }
+
+    /// Install while the caller already holds the library mutation lock.
+    pub(crate) fn apply_install_locked(
+        &self,
+        state: &State,
+        approved: &InstallPreview,
+        acquisition: Option<&crate::plan::AcquisitionSource>,
+    ) -> Result<Status, Error> {
+        let skill = match acquisition {
+            Some(source) => self
+                .preview_acquisition(source)?
+                .cached()
+                .cloned()
+                .ok_or_else(|| invalid("required skill acquisition did not succeed"))?,
+            None => self.get(&approved.artifact)?,
+        };
+        // A pending install binds the representation digest in its acquisition
+        // detail. Its local tree fingerprint is only known after extraction.
+        let digest = acquisition.map_or(skill.source.tree_sha256.as_str(), |_| "");
+        let fresh = if approved.global {
+            self.preview_scoped_skill(
+                state,
+                &InstallScope::Global {
+                    home: approved.project.clone(),
+                },
+                &approved.target,
+                &approved.artifact,
+                approved.reason.clone(),
+                (&skill.name, digest),
+            )?
+        } else {
+            self.preview_skill(
+                state,
+                &approved.project,
+                &approved.target,
+                &approved.artifact,
+                approved.reason.clone(),
+                (&skill.name, digest),
+            )?
+        };
         if &fresh != approved {
             return Err(invalid("stale preview; review again"));
         }
@@ -299,13 +415,14 @@ impl Library {
         }
         let mut record = LinkRecord {
             project: fresh.project,
+            global: fresh.global,
             destination: fresh.destination,
             artifact: fresh.artifact,
             source: fresh.source,
             reasons: BTreeSet::from([fresh.reason]),
             parent_identity: identity(&parent)?,
             link_identity: None,
-            tree_sha256: Some(fresh.tree_sha256),
+            tree_sha256: Some(skill.source.tree_sha256),
         };
         atomic_json(&journal_dir, &journal, &record, false)?;
         // Atomic non-replacing symlink creation; never delete a competing path.
@@ -326,54 +443,5 @@ impl Library {
         rustix::fs::fsync(&parent).map_err(std::io::Error::from)?;
         atomic_json(&journal_dir, &journal, &record, true)?;
         Ok(Status::Managed)
-    }
-
-    /// List recorded links including detached and unresolved records.
-    /// No directory is opened through a symbolic link and no path is removed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for invalid journal records or excessive record count.
-    pub fn audit_links(&self, state: &State) -> Result<Vec<LinkAudit>, Error> {
-        let dir = self.root.join("links");
-        let fd = directory(&dir)?;
-        let mut result = Vec::new();
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            if result.len() >= 4096 {
-                return Err(invalid("journal entry limit"));
-            }
-            let path = entry.path();
-            if path.extension().is_none_or(|e| e != "json") {
-                continue;
-            }
-            let r: LinkRecord = serde_json::from_slice(&read(&fd, name(&path)?, MAX_RECORD)?)?;
-            if self.link_path(&r.destination) != path || !r.destination.starts_with(&r.project) {
-                return Err(invalid("journal identity mismatch"));
-            }
-            let parent = r
-                .destination
-                .parent()
-                .ok_or_else(|| invalid("journal parent"))?;
-            let status = if self.get(&r.artifact).is_ok()
-                && r.source == self.object_dir(&r.artifact).join("skill")
-            {
-                directory(parent)
-                    .and_then(|p| classify(&p, name(&r.destination)?, &r.source, Some(&r)))
-                    .unwrap_or(Status::RecoveryRequired)
-            } else {
-                Status::RecoveryRequired
-            };
-            result.push(LinkAudit {
-                artifact: r.artifact,
-                detached: !state.projects.contains_key(&r.project),
-                project: r.project,
-                destination: r.destination,
-                reasons: r.reasons,
-                status,
-            });
-        }
-        result.sort_by(|a, b| a.destination.cmp(&b.destination));
-        Ok(result)
     }
 }

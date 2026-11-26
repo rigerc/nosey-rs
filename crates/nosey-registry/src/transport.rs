@@ -18,7 +18,8 @@ use std::{
 };
 use url::{Host, Url};
 
-const MAX_BODY: usize = 10 * 1024 * 1024;
+/// Maximum response body size in bytes.
+pub const MAX_BODY: usize = 10 * 1024 * 1024;
 const TOTAL_BODY: usize = 32 * 1024 * 1024;
 const MAX_REQUESTS: usize = 32;
 const MAX_REDIRECTS: usize = 5;
@@ -72,6 +73,9 @@ fn valid_domain(name: &str) -> bool {
 }
 
 /// Check whether a URL meets the registry transport policy.
+///
+/// # Errors
+/// Rejects URLs outside the HTTPS, credential and public host policy.
 pub fn validate_url(url: &Url) -> Result<(), String> {
     if url.scheme() != "https"
         || !url.username().is_empty()
@@ -267,6 +271,38 @@ impl Fetch for SafeTransport {
         Ok(response.body)
     }
 }
+
+/// Resolve a validated HTTPS host and require every result to be public.
+///
+/// # Errors
+/// Rejects invalid URLs, DNS failures and nonpublic addresses.
+pub fn public_https_addresses(url: &Url) -> Result<Vec<IpAddr>, String> {
+    use std::net::ToSocketAddrs as _;
+    validate_url(url)?;
+    match url.host() {
+        Some(Host::Ipv4(ip)) => Ok(vec![ip.into()]),
+        Some(Host::Ipv6(ip)) => Ok(vec![ip.into()]),
+        Some(Host::Domain(name)) => {
+            let absolute = format!("{}.", name.trim_end_matches('.'));
+            let addresses: Vec<_> = (absolute.as_str(), 443)
+                .to_socket_addrs()
+                .map_err(|_| "HTTPS host resolution failed".to_owned())?
+                .map(|address| address.ip())
+                .take(MAX_DNS_ADDRESSES + 1)
+                .collect();
+            if addresses.is_empty()
+                || addresses.len() > MAX_DNS_ADDRESSES
+                || !addresses.iter().copied().all(public)
+            {
+                return Err("HTTPS host resolved outside the public address policy".into());
+            }
+            Ok(addresses)
+        }
+        None => Err("HTTPS host missing".into()),
+    }
+}
+
+const MAX_DNS_ADDRESSES: usize = 64;
 
 #[cfg(test)]
 mod tests {

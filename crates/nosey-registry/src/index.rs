@@ -1,5 +1,5 @@
 //! Deterministic priority and canonical identity selection.
-use crate::{Error, Intelligence, intelligence};
+use crate::{Error, Intelligence, SKILL_EXTENSION_KEY, SkillExtension, intelligence, skill};
 use ai_catalog::{
     AiCatalog, CatalogEntry, MEDIA_TYPE_AGENT_SKILLS_GZIP, MEDIA_TYPE_AGENT_SKILLS_JSON,
     MEDIA_TYPE_AGENT_SKILLS_MARKDOWN, MEDIA_TYPE_AGENT_SKILLS_ZIP,
@@ -26,6 +26,8 @@ pub struct SelectedSkill {
     pub registry: String,
     /// Selected SDK entry.
     pub entry: CatalogEntry,
+    /// Advisory install metadata for the selected entry.
+    pub extension: Option<SkillExtension>,
     /// All alternative source/release occurrences.
     pub alternatives: Vec<(String, CatalogEntry)>,
 }
@@ -34,6 +36,8 @@ pub struct SelectedSkill {
 pub struct CatalogIndex {
     /// Canonical skill ID to selected representation.
     pub skills: BTreeMap<String, SelectedSkill>,
+    /// Approved, enabled registries represented by the supplied snapshots.
+    pub registries: BTreeSet<String>,
     /// Active intelligence in priority order.
     pub intelligence: Vec<(u32, Intelligence)>,
     /// Resolvable technology identifiers.
@@ -49,7 +53,12 @@ impl CatalogIndex {
     pub fn build(mut inputs: Vec<RegistryInput>, extension_key: &str) -> Result<Self, Error> {
         inputs.sort_by(|a, b| (a.priority, &a.id).cmp(&(b.priority, &b.id)));
         let mut index = Self::default();
+        let configured_key = extension_key
+            .strip_suffix(".intelligence")
+            .map(|prefix| format!("{prefix}.skill"));
+        let skill_key = configured_key.as_deref().unwrap_or(SKILL_EXTENSION_KEY);
         for input in inputs.into_iter().filter(|x| x.enabled && x.approved) {
+            index.registries.insert(input.id.clone());
             let mut entries = input.catalog.entries.clone();
             entries.sort_by(|a, b| {
                 a.identifier
@@ -69,11 +78,25 @@ impl CatalogIndex {
                 if let Some(selected) = index.skills.get_mut(&id) {
                     selected.alternatives.push((input.id.clone(), entry));
                 } else {
+                    let extension =
+                        match entry.extensions.as_ref().and_then(|map| map.get(skill_key)) {
+                            Some(value) => {
+                                let extension = skill::decode(value)?;
+                                if extension.is_none() {
+                                    index
+                                        .warnings
+                                        .push(format!("unsupported skill extension major: {id}"));
+                                }
+                                extension
+                            }
+                            None => None,
+                        };
                     index.skills.insert(
                         id,
                         SelectedSkill {
                             registry: input.id.clone(),
                             entry,
+                            extension,
                             alternatives: Vec::new(),
                         },
                     );
@@ -96,6 +119,17 @@ impl CatalogIndex {
                     }
                 });
                 index.intelligence.push((input.priority, intel));
+            }
+        }
+        for (id, selected) in &index.skills {
+            if let Some(extension) = &selected.extension {
+                for reference in extension.dependencies.iter().chain(&extension.conflicts) {
+                    if !index.skills.contains_key(reference) {
+                        index
+                            .warnings
+                            .push(format!("{id}: unresolved skill reference {reference}"));
+                    }
+                }
             }
         }
         Ok(index)

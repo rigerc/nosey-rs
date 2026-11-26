@@ -16,14 +16,26 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 pub mod changes;
 mod freshness;
+/// Read-only effective skill inventory.
+#[cfg(target_os = "linux")]
+pub mod inventory;
 /// Central local fixture library.
 #[cfg(target_os = "linux")]
 pub mod library;
 #[cfg(target_os = "linux")]
 mod library_io;
+/// Shared batch change planning with per-item outcomes.
+#[cfg(target_os = "linux")]
+pub mod plan;
+/// Linked preset definitions and applications.
+pub mod presets;
 mod project_activity;
 /// Native read-only project target discovery.
 pub mod skill_discovery;
+#[cfg(target_os = "linux")]
+mod sync;
+/// Agent target configuration and install scopes.
+pub mod targets;
 pub use freshness::{Freshness, SavedEvaluation};
 
 /// Central state failures.
@@ -50,15 +62,37 @@ pub struct Project {
     /// Persistent dismissals keyed by canonical skill identity.
     pub dismissed: BTreeSet<String>,
 }
+/// Authorization for updates to shared library content.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePolicy {
+    /// Apply updates only after explicit approval.
+    Manual,
+    /// Report available updates for review.
+    #[default]
+    Notify,
+    /// Apply updates that preserve acquisition identity.
+    Automatic,
+}
+
 /// Prototype Nosey-owned central state; production persistence is outstanding.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct State {
     /// Registered project directories.
     pub projects: BTreeMap<PathBuf, Project>,
+    /// Global authorization for central skill updates.
+    #[serde(default)]
+    pub update_policy: UpdatePolicy,
     /// Last explicit project activity, using Kitter's millisecond ordering.
     #[serde(default)]
     pub project_activity: BTreeMap<PathBuf, u64>,
+    #[serde(default)]
+    targets: targets::TargetConfig,
+    #[serde(default)]
+    presets: BTreeMap<String, presets::Preset>,
+    #[serde(default)]
+    preset_applications: BTreeSet<presets::PresetApplication>,
 }
 
 impl State {
@@ -81,7 +115,10 @@ impl State {
         if data.len() > 32 * 1024 * 1024 {
             return Err(Error::Invalid("state size limit".into()));
         }
-        Ok(serde_json::from_slice(&data)?)
+        let state: Self = serde_json::from_slice(&data)?;
+        state.targets.validate()?;
+        state.validate_presets()?;
+        Ok(state)
     }
     /// Persist atomically to an existing central directory outside all registered projects.
     /// # Errors

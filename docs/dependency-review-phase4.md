@@ -82,3 +82,24 @@ can retain their existing merge checks. Registry authoring decodes directly to i
 existing typed models. Provider lookups retain a value tree to inspect heterogeneous
 mappings and preserve their field-specific diagnostics. The provider tree uses JSON
 values, so YAML collection keys and non-finite numbers are outside its supported model.
+
+## Agent Skill ZIP extraction
+
+The workspace has no ZIP parser. The standard library cannot decode ZIP, and
+`tar` would handle a different representation. The evaluator scored `zip`
+92/100, `tar` 88/100 and `async_zip` 83/100. `async_zip` adds async machinery
+to a bounded in-memory read and its advisory lookup was incomplete.
+
+`zip` 9.8.2 is MIT-licensed and declares Rust 1.89. The actively maintained
+[upstream source](https://github.com/zip-rs/zip2) provides indexed access to
+entry names, Unix modes, sizes and readers. RustSec's nine historical ZIP
+advisories reported by the evaluator are patched in 9.0.5 or earlier. Nosey
+uses a bounded reader and creates each validated entry itself. Default features
+are disabled. The only compression feature is `deflate-flate2-zlib-rs`, which
+uses the Rust `flate2` and `zlib-rs` decoder stack.
+
+The lockfile adds `constant_time_eq` 0.6.2, `crc32fast` 1.5.6, `flate2`
+1.1.11, `typed-path` 0.13.0, `zeroize_derive` 1.5.0 and `zlib-rs` 0.6.9.
+It also resolves `nix` 0.32.0 for other target configurations. The Linux
+feature tree uses the Rust decoder stack. Cargo Deny passed its advisory,
+license, bans and source checks on the resolved graph.

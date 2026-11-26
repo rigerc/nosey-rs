@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 anyhow = { workspace = true }
 nosey-core = { version = "0.0.0", path = "../nosey-core" }
 nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
