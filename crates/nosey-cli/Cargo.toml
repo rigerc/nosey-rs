@@ -13,10 +13,10 @@ workspace = true
 clap = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-nosey-core = { path = "../nosey-core" }
-nosey-registry = { path = "../nosey-registry" }
-nosey-scanner = { path = "../nosey-scanner" }
-nosey-recommendation = { path = "../nosey-recommendation" }
+nosey-core = { version = "0.0.0", path = "../nosey-core" }
+nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
+nosey-scanner = { version = "0.0.0", path = "../nosey-scanner" }
+nosey-recommendation = { version = "0.0.0", path = "../nosey-recommendation" }
 
 [[bin]]
 name = "nosey"

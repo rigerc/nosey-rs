@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Central active-copy library, inspired by Kitter src/library.rs.
 //! Explicitly local fixtures only; no catalog trust is inferred from a path.
-//! Upstream: https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2
+//!
+//! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 
 use crate::library_io::{directory, invalid, read, relative};
 use crate::{Error, State};

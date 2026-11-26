@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 type Versions = BTreeMap<String, BTreeSet<VersionObservation>>;
 
-pub(crate) fn safe_identifier(value: &str) -> Option<String> {
+/// Keep identifiers that satisfy the size and character constraints.
+pub fn safe_identifier(value: &str) -> Option<String> {
     if value.is_empty()
         || value.len() > 256
         || value.starts_with(['.', '/'])
@@ -68,7 +69,7 @@ fn python_requirement(out: &mut Versions, line: &str, normalize: bool) {
         return;
     }
     let end = line
-        .find(|c: char| matches!(c, '[' | '<' | '>' | '=' | '!' | '~' | ';' | ' ' | '@'))
+        .find(['[', '<', '>', '=', '!', '~', ';', ' ', '@'])
         .unwrap_or(line.len());
     let name = &line[..end];
     if name.is_empty() {
@@ -135,17 +136,17 @@ fn toml_versions(doc: &toml::Value, ecosystem: &str, out: &mut Versions) {
             toml_versions(value, ecosystem, out);
         } else if ecosystem == "python"
             && matches!(key.as_str(), "dependencies" | "optional-dependencies")
+            && let Some(list) = value.as_array()
         {
-            if let Some(list) = value.as_array() {
-                for requirement in list.iter().filter_map(toml::Value::as_str) {
-                    python_requirement(out, requirement, true);
-                }
+            for requirement in list.iter().filter_map(toml::Value::as_str) {
+                python_requirement(out, requirement, true);
             }
         }
     }
 }
 
-pub(crate) fn observations(ecosystem: &str, path: &str, bytes: &[u8]) -> Versions {
+/// Collect version declarations from a recognized manifest.
+pub fn observations(ecosystem: &str, path: &str, bytes: &[u8]) -> Versions {
     let mut out = Versions::new();
     let Ok(text) = std::str::from_utf8(bytes) else {
         return out;
@@ -173,7 +174,7 @@ pub(crate) fn observations(ecosystem: &str, path: &str, bytes: &[u8]) -> Version
                 }
             }
         }
-        "cargo" | "python" if base.ends_with(".toml") || base == "Pipfile" => {
+        "cargo" | "python" if base.strip_suffix(".toml").is_some() || base == "Pipfile" => {
             if let Ok(doc) = toml::from_str::<toml::Value>(text) {
                 toml_versions(&doc, ecosystem, &mut out);
             }

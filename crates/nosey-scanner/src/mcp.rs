@@ -23,7 +23,8 @@ struct Server {
     enabled: Option<bool>,
 }
 
-pub(crate) fn applies(path: &str) -> bool {
+/// Check whether the path names a supported MCP manifest.
+pub fn applies(path: &str) -> bool {
     path.rsplit('/').next() == Some(".mcp.json")
         || path.ends_with("/mcp.json")
         || path == ".codex/config.toml"
@@ -87,10 +88,8 @@ fn packages(server: &Server, out: &mut BTreeSet<String>) -> Result<(), &'static 
             }
             continue;
         } else {
-            if !flagged {
-                if let Some(name) = normalize(arg)? {
-                    out.insert(name);
-                }
+            if !flagged && let Some(name) = normalize(arg)? {
+                out.insert(name);
             }
             break;
         };
@@ -101,12 +100,13 @@ fn packages(server: &Server, out: &mut BTreeSet<String>) -> Result<(), &'static 
     Ok(())
 }
 
-pub(crate) fn names(path: &str, bytes: &[u8]) -> Result<BTreeSet<String>, &'static str> {
+/// Collect package names from a passive MCP manifest inspection.
+pub fn names(path: &str, bytes: &[u8]) -> Result<BTreeSet<String>, &'static str> {
     if bytes.len() > 65_536 {
         return Err("mcp-size-limit");
     }
     let text = std::str::from_utf8(bytes).map_err(|_| "invalid-mcp-text")?;
-    let doc: Document = if path.ends_with(".toml") {
+    let doc: Document = if path.strip_suffix(".toml").is_some() {
         toml::from_str(text).map_err(|_| "malformed-mcp-toml")?
     } else {
         serde_json::from_str(text).map_err(|_| "malformed-mcp-json")?

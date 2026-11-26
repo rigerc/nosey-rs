@@ -1,7 +1,8 @@
 //! JSONC comments and trailing commas, adapted from Nosey-9 providers.go.
 //! Preserve quoted strings; do not allow other JSON extensions.
 
-pub(crate) fn strip(text: &str) -> Result<Vec<u8>, &'static str> {
+/// Replace JSON comments with whitespace before parsing.
+pub fn strip(text: &str) -> Result<Vec<u8>, &'static str> {
     let mut out = text.as_bytes().to_vec();
     let mut i = 0;
     let mut quoted = false;

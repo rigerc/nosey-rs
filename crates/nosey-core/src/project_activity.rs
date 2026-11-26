@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Project activity ordering adapted from Kitter v0.2.6, src/config.rs.
-//! Upstream: https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2
+//!
+//! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 //! See licenses/kitter-APACHE-2.0.txt and NOTICE.
 
 use crate::{Error, State};
@@ -90,7 +91,7 @@ mod tests {
         assert!(!state.project_activity.contains_key(&a));
         fs::remove_dir(&b)?;
         assert_eq!(state.unregister(&b)?, b);
-        assert!(state.project_paths().is_empty());
+        assert_eq!(state.project_paths(), [] as [std::path::PathBuf; 0]);
         Ok(())
     }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Install preview/revalidation adapted from Kitter src/project/install.rs.
+//!
 //! Unlike Kitter, no occupied path is replaced, and no unmanaged link adopted.
 //! Pending journal records survive an interrupted apply. Unlink is preview-only.
 

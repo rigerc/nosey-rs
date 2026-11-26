@@ -1,4 +1,5 @@
 //! Discovery, signature verification and explicit approval boundary.
+//!
 //! No registry is activated by discovery, signature presence, or a successful fetch alone.
 
 use crate::transport::{SafeTransport, validate_url};
@@ -50,7 +51,7 @@ pub struct RegistryConfig {
 
 impl RegistryConfig {
     /// Clear approval on importing settings from another installation.
-    pub fn clear_imported_approval(&mut self) {
+    pub const fn clear_imported_approval(&mut self) {
         self.approved = false;
         self.refreshed_at = None;
     }
@@ -188,10 +189,10 @@ fn validate_namespace(snapshot: &Snapshot, id: &str, key: &str) -> Result<(), Er
     {
         return Err(Error::Invalid("invalid local registry ID".into()));
     }
-    if let Some(intel) = intelligence(&snapshot.catalog, key)? {
-        if intel.registry_id != id {
-            return Err(Error::Invalid("registry namespace mismatch".into()));
-        }
+    if let Some(intel) = intelligence(&snapshot.catalog, key)?
+        && intel.registry_id != id
+    {
+        return Err(Error::Invalid("registry namespace mismatch".into()));
     }
     Ok(())
 }
@@ -202,12 +203,12 @@ fn failed(outcome: Option<&Outcome>) -> bool {
 
 fn review_bytes(
     bytes: Vec<u8>,
-    url: Url,
+    url: &Url,
     fetch: &dyn Fetch,
     operators: &[String],
     method: Option<Method>,
 ) -> Result<ReviewedCatalog, Error> {
-    validate_url(&url).map_err(Error::Invalid)?;
+    validate_url(url).map_err(Error::Invalid)?;
     if bytes.len() > MAX_CATALOG_BYTES {
         return Err(Error::TooLarge);
     }
@@ -266,7 +267,7 @@ pub fn discover_registry(input: &str, online: bool) -> Result<ReviewedCatalog, E
         Url::parse(&discovery.url).map_err(|_| Error::Invalid("invalid resolved URL".into()))?;
     review_bytes(
         discovery.bytes,
-        url,
+        &url,
         &transport,
         &[],
         Some(discovery.method),
@@ -292,7 +293,7 @@ pub fn refresh_registry(config: &RegistryConfig, online: bool) -> Result<Reviewe
     }
     let reviewed = review_bytes(
         response.body,
-        response.url,
+        &response.url,
         &transport,
         &config.authorized_operators,
         None,
@@ -319,7 +320,7 @@ mod tests {
             |_: &str| -> Result<Vec<u8>, String> { Err("fixture never fetches".into()) };
         let review = review_bytes(
             bytes.clone(),
-            Url::parse("https://example.org/catalog")?,
+            &Url::parse("https://example.org/catalog")?,
             &no_network,
             &[],
             None,

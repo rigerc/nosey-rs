@@ -48,7 +48,8 @@ fn provider(local: &str, expr: &Expression) -> Result<String, &'static str> {
     }
 }
 
-pub(crate) fn names(ecosystem: &str, text: &str) -> Result<BTreeSet<String>, &'static str> {
+/// Extract Terraform provider or resource names from an HCL document.
+pub fn names(ecosystem: &str, text: &str) -> Result<BTreeSet<String>, &'static str> {
     if text.len() > MAX_HCL_BYTES {
         return Err("terraform-size-limit");
     }
@@ -56,10 +57,10 @@ pub(crate) fn names(ecosystem: &str, text: &str) -> Result<BTreeSet<String>, &'s
     let mut out = BTreeSet::new();
     for block in body.blocks() {
         if ecosystem == "terraform.resource" {
-            if block.identifier() == "resource" {
-                if let Some(label) = block.labels().first() {
-                    out.insert(label.as_str().to_owned());
-                }
+            if block.identifier() == "resource"
+                && let Some(label) = block.labels().first()
+            {
+                out.insert(label.as_str().to_owned());
             }
         } else if block.identifier() == "terraform" {
             for required in block

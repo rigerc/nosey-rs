@@ -1,4 +1,5 @@
 //! In-memory, read-only search over validated, enabled registry data.
+//!
 //! Search ranking never affects recommendation priority or installation.
 
 use crate::CatalogIndex;
@@ -176,7 +177,7 @@ impl ExploreIndex {
     }
 
     /// Search with bounded case-insensitive substring or ordered-subsequence
-    /// matching. All query words must match; all supplied facets are ANDed.
+    /// matching. All query words must match; all supplied facets are `ANDed`.
     /// An unknown category never satisfies an explicit category filter.
     #[must_use]
     pub fn search(&self, query: &str, filter: &Filter<'_>, limit: usize) -> Vec<Hit<'_>> {

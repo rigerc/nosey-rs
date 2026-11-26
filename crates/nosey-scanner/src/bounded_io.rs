@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //! Bounded file reads adapted from what-stack v0.1.1, src/config/files.rs.
-//! Upstream: https://github.com/ehsan18t/what-stack/tree/aa792571b5829b50dda71644857532dd80e302b8
+//! Upstream: <https://github.com/ehsan18t/what-stack/tree/aa792571b5829b50dda71644857532dd80e302b8>
 //! Nosey additionally anchors each open to the registered directory and
 //! refuses symlinks, truncation and nonregular handles. No lossy decoding.
 
@@ -10,7 +10,8 @@ use std::{
     path::Path,
 };
 
-pub(crate) struct RootReader {
+/// Read bounded files relative to an opened project directory.
+pub struct RootReader {
     #[cfg(unix)]
     root: std::os::fd::OwnedFd,
 }

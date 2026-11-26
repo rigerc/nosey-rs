@@ -90,7 +90,7 @@ impl State {
         let parent = path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
+            .unwrap_or_else(|| Path::new("."));
         let parent = parent.canonicalize()?;
         if self.projects.keys().any(|p| parent.starts_with(p)) {
             return Err(Error::Invalid(

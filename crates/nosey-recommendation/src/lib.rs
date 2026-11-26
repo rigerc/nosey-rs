@@ -142,21 +142,21 @@ pub fn evaluate(
             coverage,
         });
     }
-    fn order(r: &Recommendation) -> (bool, u32, String, &str) {
-        let combination = r.reasons.iter().any(|x| x.combination);
-        let priority = r
-            .reasons
-            .iter()
-            .filter(|x| x.combination == combination)
-            .map(|x| x.priority)
-            .min()
-            .unwrap_or(u32::MAX);
-        (!combination, priority, r.name.to_lowercase(), &r.id)
-    }
     result
         .recommendations
         .sort_by(|a, b| order(a).cmp(&order(b)));
     result
+}
+fn order(r: &Recommendation) -> (bool, u32, String, &str) {
+    let combination = r.reasons.iter().any(|x| x.combination);
+    let priority = r
+        .reasons
+        .iter()
+        .filter(|x| x.combination == combination)
+        .map(|x| x.priority)
+        .min()
+        .unwrap_or(u32::MAX);
+    (!combination, priority, r.name.to_lowercase(), &r.id)
 }
 /// Previously mapped project-owned skills with no other installation reason.
 #[must_use]

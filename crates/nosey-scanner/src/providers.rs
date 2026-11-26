@@ -2,7 +2,8 @@
 use crate::{jsonc, mcp, terraform, yaml_providers};
 use serde_json::Value;
 use std::collections::BTreeSet;
-pub(crate) fn supported(e: &str) -> bool {
+/// Check whether the scanner has a provider for the ecosystem.
+pub fn supported(e: &str) -> bool {
     matches!(
         e,
         "npm"
@@ -22,10 +23,11 @@ pub(crate) fn supported(e: &str) -> bool {
 fn base(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
-pub(crate) fn applies(e: &str, path: &str) -> bool {
+/// Check whether the provider recognizes this manifest path.
+pub fn applies(e: &str, path: &str) -> bool {
     let b = base(path);
     match e {
-        "terraform" | "terraform.resource" => b.ends_with(".tf"),
+        "terraform" | "terraform.resource" => b.strip_suffix(".tf").is_some(),
         "mcp" => mcp::applies(path),
         "githubAction" => path.contains(".github/workflows/"),
         "npm" => b == "package.json",
@@ -90,62 +92,71 @@ fn toml_names(v: &toml::Value, e: &str, out: &mut BTreeSet<String>) {
                 toml_names(v, e, out);
             } else if e == "python"
                 && matches!(k.as_str(), "dependencies" | "optional-dependencies")
+                && let Some(list) = v.as_array()
             {
-                if let Some(list) = v.as_array() {
-                    out.extend(
-                        list.iter()
-                            .filter_map(toml::Value::as_str)
-                            .filter_map(python_name),
-                    );
-                }
+                out.extend(
+                    list.iter()
+                        .filter_map(toml::Value::as_str)
+                        .filter_map(python_name),
+                );
             }
         }
     }
 }
-pub(crate) fn names(e: &str, path: &str, bytes: &[u8]) -> Result<BTreeSet<String>, &'static str> {
+fn json_names(
+    e: &str,
+    path: &str,
+    text: &str,
+    bytes: &[u8],
+    out: &mut BTreeSet<String>,
+) -> Result<(), &'static str> {
+    let normalized;
+    let input = if base(path) == "deno.jsonc" {
+        normalized = jsonc::strip(text)?;
+        normalized.as_slice()
+    } else {
+        bytes
+    };
+    let doc: Value = serde_json::from_slice(input).map_err(|_| "malformed-json-manifest")?;
+    if !doc.is_object() {
+        return Err("malformed-json-manifest");
+    }
+    for key in [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+        "require",
+        "require-dev",
+        "imports",
+    ] {
+        if let Some(v) = doc.get(key) {
+            let m = v.as_object().ok_or("invalid-dependency-table")?;
+            for (name, value) in m {
+                if e == "deno" {
+                    out.insert(value.as_str().ok_or("invalid-dependency-value")?.to_owned());
+                } else {
+                    if !value.is_string() {
+                        return Err("invalid-dependency-value");
+                    }
+                    out.insert(name.clone());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+/// Extract dependency names from the selected manifest format.
+pub fn names(e: &str, path: &str, bytes: &[u8]) -> Result<BTreeSet<String>, &'static str> {
     let text = std::str::from_utf8(bytes).map_err(|_| "invalid-manifest-text")?;
     let mut out = BTreeSet::new();
     match e {
         "npm" | "composer" | "deno" => {
-            let normalized;
-            let input = if base(path) == "deno.jsonc" {
-                normalized = jsonc::strip(text)?;
-                normalized.as_slice()
-            } else {
-                bytes
-            };
-            let doc: Value =
-                serde_json::from_slice(input).map_err(|_| "malformed-json-manifest")?;
-            if !doc.is_object() {
-                return Err("malformed-json-manifest");
-            }
-            for key in [
-                "dependencies",
-                "devDependencies",
-                "peerDependencies",
-                "optionalDependencies",
-                "require",
-                "require-dev",
-                "imports",
-            ] {
-                if let Some(v) = doc.get(key) {
-                    let m = v.as_object().ok_or("invalid-dependency-table")?;
-                    for (name, value) in m {
-                        if e == "deno" {
-                            out.insert(
-                                value.as_str().ok_or("invalid-dependency-value")?.to_owned(),
-                            );
-                        } else {
-                            if !value.is_string() {
-                                return Err("invalid-dependency-value");
-                            }
-                            out.insert(name.clone());
-                        }
-                    }
-                }
-            }
+            json_names(e, path, text, bytes, &mut out)?;
         }
-        "cargo" | "python" if base(path).ends_with(".toml") || base(path) == "Pipfile" => {
+        "cargo" | "python"
+            if base(path).strip_suffix(".toml").is_some() || base(path) == "Pipfile" =>
+        {
             let doc: toml::Value = toml::from_str(text).map_err(|_| "malformed-toml-manifest")?;
             toml_names(&doc, e, &mut out);
         }
@@ -203,17 +214,7 @@ pub(crate) fn names(e: &str, path: &str, bytes: &[u8]) -> Result<BTreeSet<String
                     if n.contains('$') {
                         return Err("dynamic-docker-image");
                     }
-                    let n = n.split('@').next().unwrap_or(n);
-                    let n = if let Some(i) = n.rfind(':') {
-                        if n.rfind('/').is_none_or(|j| i > j) {
-                            &n[..i]
-                        } else {
-                            n
-                        }
-                    } else {
-                        n
-                    };
-                    out.insert(n.to_owned());
+                    out.insert(yaml_providers::image_name(n).to_owned());
                 }
             }
         }
@@ -221,7 +222,7 @@ pub(crate) fn names(e: &str, path: &str, bytes: &[u8]) -> Result<BTreeSet<String
         "githubAction" => return yaml_providers::actions(text),
         "mcp" => return mcp::names(path, bytes),
         _ => return Err("unsupported-provider"),
-    };
+    }
     Ok(out)
 }
 

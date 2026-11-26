@@ -172,42 +172,63 @@ fn main() -> Result<()> {
             mcp,
         } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
-            let snapshot = load_snapshot(&catalog)?;
-            let index = CatalogIndex::build(
-                vec![RegistryInput {
-                    id: registry_id,
-                    priority: 0,
-                    approved: true,
-                    enabled: true,
-                    catalog: snapshot.catalog,
-                }],
+            scan_fixture(
+                &mut state,
+                &args.state,
+                &root,
+                &catalog,
+                registry_id,
                 &extension,
-            )?;
-            let root = root.canonicalize()?;
-            let settings = Settings {
                 mcp,
-                ..Settings::default()
-            };
-            let attempt = state
-                .scan(&root, &index, &settings, &AtomicBool::new(false))
-                .cloned();
-            state.save(&args.state)?;
-            let scan = attempt?;
-            let project = state
-                .projects
-                .get(&root)
-                .context("registered project disappeared")?;
-            // Explicit synthetic fixture mode is not a production online session.
-            let evaluation = project.reevaluate(
-                &index,
-                &settings,
-                true,
-                &BTreeSet::new(),
-                &BTreeMap::new(),
-                &BTreeSet::new(),
             )?;
-            println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
         }
     }
+    Ok(())
+}
+
+fn scan_fixture(
+    state: &mut State,
+    state_path: &std::path::Path,
+    root: &std::path::Path,
+    catalog: &std::path::Path,
+    registry_id: String,
+    extension: &str,
+    mcp: bool,
+) -> Result<()> {
+    let snapshot = load_snapshot(catalog)?;
+    let index = CatalogIndex::build(
+        vec![RegistryInput {
+            id: registry_id,
+            priority: 0,
+            approved: true,
+            enabled: true,
+            catalog: snapshot.catalog,
+        }],
+        extension,
+    )?;
+    let root = root.canonicalize()?;
+    let settings = Settings {
+        mcp,
+        ..Settings::default()
+    };
+    let attempt = state
+        .scan(&root, &index, &settings, &AtomicBool::new(false))
+        .cloned();
+    state.save(state_path)?;
+    let scan = attempt?;
+    let project = state
+        .projects
+        .get(&root)
+        .context("registered project disappeared")?;
+    // Explicit synthetic fixture mode is not a production online session.
+    let evaluation = project.reevaluate(
+        &index,
+        &settings,
+        true,
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
     Ok(())
 }

@@ -14,9 +14,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tempfile = { workspace = true }
-nosey-registry = { path = "../nosey-registry" }
-nosey-scanner = { path = "../nosey-scanner" }
-nosey-recommendation = { path = "../nosey-recommendation" }
+nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
+nosey-scanner = { version = "0.0.0", path = "../nosey-scanner" }
+nosey-recommendation = { version = "0.0.0", path = "../nosey-recommendation" }
 
 sha2 = { workspace = true }
 serde_yaml = { workspace = true }

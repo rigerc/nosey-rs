@@ -17,17 +17,19 @@ fn parse(text: &str) -> Result<Value, &'static str> {
     Ok(v)
 }
 
-pub(crate) fn image_name(value: &str) -> &str {
+/// Remove the tag and digest while preserving any registry port.
+pub fn image_name(value: &str) -> &str {
     let value = value.split('@').next().unwrap_or(value);
-    if let Some(i) = value.rfind(':') {
-        if value.rfind('/').is_none_or(|j| i > j) {
-            return &value[..i];
-        }
+    if let Some(i) = value.rfind(':')
+        && value.rfind('/').is_none_or(|j| i > j)
+    {
+        return &value[..i];
     }
     value
 }
 
-pub(crate) fn compose(text: &str) -> Result<BTreeSet<String>, &'static str> {
+/// Collect image names from a Compose manifest.
+pub fn compose(text: &str) -> Result<BTreeSet<String>, &'static str> {
     let doc = parse(text)?;
     let mut out = BTreeSet::new();
     if let Some(services) = doc.get("services") {
@@ -78,7 +80,8 @@ fn steps(node: Option<&Value>, out: &mut BTreeSet<String>) -> Result<(), &'stati
     Ok(())
 }
 
-pub(crate) fn actions(text: &str) -> Result<BTreeSet<String>, &'static str> {
+/// Collect action references from a GitHub Actions workflow.
+pub fn actions(text: &str) -> Result<BTreeSet<String>, &'static str> {
     let doc = parse(text)?;
     let mut out = BTreeSet::new();
     if let Some(jobs) = doc.get("jobs") {

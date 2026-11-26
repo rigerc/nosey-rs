@@ -2,7 +2,8 @@
 //! fallback supports lookaround and backreferences with an operation budget.
 //! This is an ECMAScript-oriented subset, not a complete regexp2 equivalence.
 
-pub(crate) enum Pattern {
+/// A compiled regular expression using the supported matcher engines.
+pub enum Pattern {
     Linear(regex::Regex),
     Fancy(fancy_regex::Regex),
 }

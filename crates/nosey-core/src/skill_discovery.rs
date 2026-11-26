@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Native read-only installation discovery adapted from Kitter v0.2.6
 //! src/effective_skills/scanner.rs (direct_children) and src/directory_link.rs.
-//! Upstream: https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2
+//!
+//! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 //! See licenses/kitter-APACHE-2.0.txt and NOTICE.
 
 use crate::{Error, State};
@@ -61,7 +62,7 @@ pub fn inspect_target(state: &State, project: &Path, target: &Path) -> Result<Ta
     if !state.projects.contains_key(&root) {
         return Err(Error::Invalid("project not registered".into()));
     }
-    let mut dir = root.clone();
+    let mut dir = root;
     let mut relative = PathBuf::new();
     let mut absent = false;
     let mut depth = 0;
@@ -141,15 +142,15 @@ fn inspect_manifest(
     candidates: &mut Vec<Candidate>,
 ) -> io::Result<()> {
     let path = dir.join(MANIFEST);
-    if let Some(m) = metadata(&path)? {
-        if m.is_file() {
-            candidates.push(Candidate::Manifest {
-                path: relative.join(MANIFEST),
-            });
-        }
-        // A linked manifest is not read or considered a regular manifest.
-        // Its containing directory is not asserted to be a skill.
+    if let Some(m) = metadata(&path)?
+        && m.is_file()
+    {
+        candidates.push(Candidate::Manifest {
+            path: relative.join(MANIFEST),
+        });
     }
+    // A linked manifest is not read or considered a regular manifest.
+    // Its containing directory is not asserted to be a skill.
     Ok(())
 }
 

@@ -23,51 +23,72 @@ pub struct Technology {
 pub enum RuleKind {
     /// Match a path glob or regular expression.
     File {
+        /// Glob selecting candidate paths.
         #[serde(default)]
         glob: String,
+        /// Regular expression matched against the path.
         #[serde(default, rename = "pathRegex")]
         path_regex: String,
+        /// Scope used when matching candidate paths.
         #[serde(default, rename = "pathScope")]
         path_scope: String,
     },
     /// Match a path suffix.
-    Extension { extension: String },
+    Extension {
+        /// Path suffix to match.
+        extension: String,
+    },
     /// Match bounded file contents.
     Content {
+        /// Glob selecting candidate paths.
         glob: String,
+        /// Literal text to match in file contents.
         #[serde(default)]
         contains: String,
+        /// Regular expression matched against file contents.
         #[serde(default)]
         regex: String,
+        /// Flags for the content regular expression.
         #[serde(default, rename = "regexFlags")]
         regex_flags: String,
     },
     /// Match names, never values, of dotenv keys.
     Dotenv {
+        /// Glob selecting candidate paths.
         #[serde(default)]
         glob: String,
+        /// Exact dotenv key name.
         #[serde(default)]
         key: String,
+        /// Regular expression matched against dotenv key names.
         #[serde(default, rename = "keyRegex")]
         key_regex: String,
     },
     /// Match a parsed ecosystem dependency.
     Dependency {
+        /// Dependency ecosystem to search.
         ecosystem: String,
+        /// Exact package name.
         #[serde(default)]
         name: String,
+        /// Regular expression matched against package names.
         #[serde(default, rename = "nameRegex")]
         name_regex: String,
     },
     /// Match a configured MCP package, without running it.
     McpPackage {
+        /// Exact package name.
         #[serde(default)]
         name: String,
+        /// Regular expression matched against package names.
         #[serde(default, rename = "nameRegex")]
         name_regex: String,
     },
     /// External detector; unavailable until explicitly approved adapter execution is implemented.
-    Detector { detector: String },
+    Detector {
+        /// External detector identifier.
+        detector: String,
+    },
     /// Forward-compatible unknown operator: never execute.
     #[serde(other)]
     Unknown,

@@ -71,7 +71,8 @@ fn valid_domain(name: &str) -> bool {
         .any(|s| lower == *s || lower.ends_with(&format!(".{s}")))
 }
 
-pub(crate) fn validate_url(url: &Url) -> Result<(), String> {
+/// Check whether a URL meets the registry transport policy.
+pub fn validate_url(url: &Url) -> Result<(), String> {
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()

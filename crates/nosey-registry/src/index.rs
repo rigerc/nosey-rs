@@ -43,7 +43,7 @@ pub struct CatalogIndex {
 }
 impl CatalogIndex {
     /// Build from approved enabled inputs; ties use registry ID and highest lexical version.
-    /// The lexical policy is explicit, provisional, and never interprets arbitrary versions as SemVer.
+    /// The lexical policy is explicit, provisional, and never interprets arbitrary versions as `SemVer`.
     /// # Errors
     /// Invalid extension data or mismatched registry identity fails closed.
     pub fn build(mut inputs: Vec<RegistryInput>, extension_key: &str) -> Result<Self, Error> {

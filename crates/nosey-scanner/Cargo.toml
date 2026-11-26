@@ -21,7 +21,7 @@ globset = { workspace = true }
 walkdir = { workspace = true }
 toml = { workspace = true }
 sha2 = { workspace = true }
-nosey-registry = { path = "../nosey-registry" }
+nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true }

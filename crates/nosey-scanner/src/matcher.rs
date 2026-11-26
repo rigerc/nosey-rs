@@ -4,13 +4,14 @@ use crate::{MatchKind, VersionObservation, providers, versions};
 use globset::{GlobBuilder, GlobMatcher};
 use nosey_registry::RuleKind;
 
-pub(crate) struct Observation {
+/// A matched identifier and its optional version evidence.
+pub struct Observation {
     pub(crate) kind: MatchKind,
     pub(crate) identifier: Option<String>,
     pub(crate) version: Option<VersionObservation>,
 }
 impl Observation {
-    fn simple(kind: MatchKind) -> Self {
+    const fn simple(kind: MatchKind) -> Self {
         Self {
             kind,
             identifier: None,
@@ -32,7 +33,8 @@ fn glob(pattern: &str) -> Result<GlobMatcher, &'static str> {
         .map(|g| g.compile_matcher())
         .map_err(|_| "invalid-glob")
 }
-pub(crate) enum Name {
+/// A literal or regular expression used to match names.
+pub enum Name {
     Literal(String),
     Pattern(Pattern),
 }
@@ -53,7 +55,8 @@ impl Name {
         }
     }
 }
-pub(crate) enum Matcher {
+/// A compiled registry rule ready to evaluate against a project path.
+pub enum Matcher {
     FileGlob(GlobMatcher),
     FileRegex(Pattern, bool),
     Extension(String),
@@ -87,13 +90,13 @@ impl Matcher {
                 regex: r,
                 regex_flags,
             } => {
-                let name = if !contains.is_empty() {
-                    Name::Literal(contains.clone())
-                } else {
+                let name = if contains.is_empty() {
                     if !regex_flags.is_empty() && regex_flags != "i" {
                         return Err("unsupported-regex-flags");
                     }
                     Name::Pattern(regex(r, regex_flags == "i")?)
+                } else {
+                    Name::Literal(contains.clone())
                 };
                 Ok(Self::Content(glob(g)?, name))
             }
