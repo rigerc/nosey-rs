@@ -1,6 +1,8 @@
 //! AI Catalog adapter and typed Nosey intelligence; no alternative wire model.
 #![forbid(unsafe_code)]
 mod authoring;
+mod bundle;
+pub use bundle::BundleSource;
 /// Read-only in-memory search over catalog entities.
 pub mod explore;
 mod index;
@@ -10,11 +12,13 @@ pub mod review;
 mod snapshot;
 mod transport;
 use ai_catalog::AiCatalog;
+pub use ai_catalog_validate::Fetch;
 pub use authoring::{compile, read_bounded};
 pub use index::{CatalogIndex, RegistryInput, SelectedSkill};
 pub use model::{Combination, Intelligence, Mapping, Rule, RuleKind, Technology};
 pub use snapshot::{Snapshot, load_snapshot, save_snapshot};
 use thiserror::Error;
+pub use transport::{MAX_BODY as MAX_FETCH_BYTES, SafeTransport};
 
 /// Maximum accepted catalog or authoring input in bytes.
 pub const MAX_CATALOG_BYTES: usize = 16 * 1024 * 1024;
