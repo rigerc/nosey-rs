@@ -36,7 +36,7 @@ Update stages and verifies the replacement and atomically exchanges it with the 
 
 ## Batch change plans
 
-One shared planning service reviews installs, unlinks, bundle acquisitions and library updates together. Write the requests to a JSON file (at most 256 changes, 1 MiB):
+One shared planning service reviews installs, unlinks, skill acquisitions and library updates together. Write the requests to a JSON file (at most 256 changes, 1 MiB):
 
 ```json
 {"changes": [
@@ -56,7 +56,7 @@ apply-plan <library> <requests.json> [--only <change-id>]... --approve <plan-fin
 
 `plan` previews every request without changing anything. Duplicate requests collapse to one change, and each change gets a stable ID. A request that cannot be previewed, or whose destination is occupied, unowned or needs recovery, is listed with a `blocker` and is never executed. The plan fingerprint covers every listed change, so approval applies to exactly the reviewed set; use `--only` to plan and approve a subset. `apply-plan` refuses the whole batch before any mutation if the fresh plan no longer matches the approval.
 
-Approved changes run in order: unlinks, bundle acquisitions, installs and library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings remain outside this slice.
+Approved changes run in order: unlinks, skill acquisitions, installs and library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings remain outside this slice.
 
 ## Configured targets and inventory
 
@@ -136,9 +136,35 @@ HTTPS Agent Skill ZIP bundles must contain a root `SKILL.md`. The transport
 caps response bytes at 10 MiB. After verifying the SDK digest over the original
 bytes, extraction caps the tree at 4,096 paths and 64 MiB, with 8 MiB per file
 and 32 path components. Extraction rejects traversal, links and special
-entries and executes no content. Git acquisition is unavailable pending an
-implementation that safely isolates Git configuration and bounds checkout
-resources. Other bundle media types and inline data are unsupported.
+entries and executes no content. Other bundle media types and inline data are
+unsupported.
+
+## Pinned Git acquisition
+
+Supply an explicitly approved HTTPS repository, a 40-hex commit and the
+relative skill path. Use `.` for a skill at the repository root.
+
+```text
+preview-acquire-git <library> <artifact> --repo <https-url> --path <subtree> --revision <sha>
+apply-acquire-git <library> <artifact> --repo <https-url> --path <subtree> --revision <sha> --approve <fingerprint>
+```
+
+The batch action also accepts a Git source:
+
+```json
+{"action": "acquire_library_skill", "install_name": "sample",
+ "source": {"artifact": "example-registry:skill.sample", "repo": "https://example.org/repo.git",
+ "path": "skills/sample", "revision": "0123456789012345678901234567890123456789"}}
+```
+
+Git 2.42 or newer is required for HTTPS retrieval. Nosey uses a private bare
+repository, disables hooks and redirects, and verifies the fetched commit
+before reading the selected subtree. Only regular files and directories are
+materialized and they pass the same limits and manifest validation as bundle
+content. Git commands share a 60-second deadline and bounded captured output.
+An intact matching active copy is reusable offline. Credential helpers, SSH
+and Git updates are outside this slice. A shallow fetch may still transfer
+objects outside the selected subtree.
 
 ## Limitations
 
@@ -153,6 +179,6 @@ preview-remove-unused <library> <fixture-id> [--external-references-checked]
 apply-remove-unused <library> <fixture-id> --external-references-checked --approve <fingerprint>
 ```
 
-Source removal review preserves the copies it lists. Every recorded link or journal, including those retained after unregistering a project, blocks removal. Use `--external-references-checked` only after ruling out unmanaged references to the exact copy. The library cannot enumerate arbitrary external paths.
+Source removal review preserves the copies it lists. Every recorded link or journal, including those retained after unregistering a project, blocks removal. An applied preset also retains every desired member before synchronization creates any links. Cleanup reports list these applications. Use `--external-references-checked` only after ruling out unmanaged references to the exact copy. The library cannot enumerate arbitrary external paths.
 
 In a plan, use `{"action":"remove_unused_library_skill","artifact":"urn:nosey:fixture:sample","external_references_checked":true}`. Removal runs after link changes. If an unlink clears the final reference, preview removal again so the approval reflects the new inventory.

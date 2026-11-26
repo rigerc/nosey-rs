@@ -9,12 +9,13 @@
 use crate::{
     Error, State,
     changes::{InstallPreview, InstallReason, LinkPreview},
-    library::{AcquisitionPreview, BundleSource, Library, RemovePreview, UpdatePreview, hash},
+    library::{Library, RemovePreview, UpdatePreview, hash},
     library_io::invalid,
     targets::InstallScope,
 };
 use nosey_registry::Fetch;
 mod acquisition;
+pub use acquisition::{AcquisitionReview, AcquisitionSource};
 mod preview;
 use acquisition::{Acquisitions, HttpsFetch, acquisitions};
 mod apply_sync;
@@ -65,10 +66,10 @@ pub enum ChangeRequest {
         /// Reason to remove.
         reason: InstallReason,
     },
-    /// Retrieve a digest-pinned Agent Skill bundle from a selected catalog entry.
+    /// Retrieve an Agent Skill from a digest-pinned bundle or commit-pinned Git subtree.
     AcquireLibrarySkill {
         /// Reviewed catalog source and canonical identity.
-        source: BundleSource,
+        source: AcquisitionSource,
         /// Expected manifest name for any dependent installs in this batch.
         #[serde(default)]
         install_name: Option<String>,
@@ -111,15 +112,15 @@ impl ChangeRequest {
 pub enum ChangeDetail {
     /// Install preview.
     Install(InstallPreview),
-    /// Install destination reviewed before a bundle is available locally.
+    /// Install destination reviewed before the source is available locally.
     PendingInstall {
-        /// Project and destination state bound to the bundle digest.
+        /// Project and destination state bound to the acquisition source.
         install: InstallPreview,
         /// Exact source whose acquisition must succeed first.
-        source: BundleSource,
+        source: AcquisitionSource,
     },
     /// Acquisition preview.
-    Acquire(AcquisitionPreview),
+    Acquire(AcquisitionReview),
     /// Unlink preview.
     Unlink(LinkPreview),
     /// Library update preview.
@@ -387,7 +388,7 @@ impl Library {
         fetch: &impl Fetch,
     ) -> ChangeOutcome {
         if let Some(ChangeDetail::PendingInstall { install, source }) = &reviewed.detail {
-            // The install was reviewed against the bundle digest; apply_install
+            // The install was reviewed against the pinned source. apply_install
             // requires the acquisition to have succeeded and revalidates the destination.
             return match self.apply_install(state, install, Some(source)) {
                 Ok(_) => ChangeOutcome::Applied,
@@ -421,7 +422,7 @@ impl Library {
                 else {
                     return ChangeOutcome::Stale;
                 };
-                self.acquire_named_bundle(&p.source, install_name.as_deref(), fetch)
+                self.acquire_source(p.source(), install_name.as_deref(), fetch)
                     .map(drop)
             }
             Some(ChangeDetail::PendingInstall { .. }) | None => {

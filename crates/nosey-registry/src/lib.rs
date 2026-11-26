@@ -21,6 +21,7 @@ pub use model::{Combination, Intelligence, Mapping, Rule, RuleKind, Technology};
 pub use snapshot::{Snapshot, load_snapshot, save_snapshot};
 use thiserror::Error;
 pub use transport::{MAX_BODY as MAX_FETCH_BYTES, SafeTransport};
+pub use transport::{public_https_addresses, validate_url};
 
 /// Maximum accepted catalog or authoring input in bytes.
 pub const MAX_CATALOG_BYTES: usize = 16 * 1024 * 1024;

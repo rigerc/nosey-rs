@@ -334,10 +334,10 @@ impl Library {
         &self,
         state: &State,
         approved: &InstallPreview,
-        bundle: Option<&crate::library::BundleSource>,
+        acquisition: Option<&crate::plan::AcquisitionSource>,
     ) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
-        self.apply_install_locked(state, approved, bundle)
+        self.apply_install_locked(state, approved, acquisition)
     }
 
     /// Install while the caller already holds the library mutation lock.
@@ -345,18 +345,19 @@ impl Library {
         &self,
         state: &State,
         approved: &InstallPreview,
-        bundle: Option<&crate::library::BundleSource>,
+        acquisition: Option<&crate::plan::AcquisitionSource>,
     ) -> Result<Status, Error> {
-        let skill = match bundle {
+        let skill = match acquisition {
             Some(source) => self
-                .preview_acquire(source)?
-                .cached
-                .ok_or_else(|| invalid("required bundle acquisition did not succeed"))?,
+                .preview_acquisition(source)?
+                .cached()
+                .cloned()
+                .ok_or_else(|| invalid("required skill acquisition did not succeed"))?,
             None => self.get(&approved.artifact)?,
         };
         // A pending install binds the representation digest in its acquisition
         // detail. Its local tree fingerprint is only known after extraction.
-        let digest = bundle.map_or(skill.source.tree_sha256.as_str(), |_| "");
+        let digest = acquisition.map_or(skill.source.tree_sha256.as_str(), |_| "");
         let fresh = if approved.global {
             self.preview_scoped_skill(
                 state,
