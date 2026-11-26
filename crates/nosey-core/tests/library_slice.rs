@@ -332,3 +332,53 @@ fn cleanup_requires_coverage_and_respects_detached_links() -> Result<(), Box<dyn
     assert!(library.get(FIXTURE_ID).is_err());
     Ok(())
 }
+
+#[test]
+fn applied_preset_retains_copy_before_links_exist() -> Result<(), Box<dyn std::error::Error>> {
+    use nosey_core::{
+        presets::{Preset, PresetApplication},
+        targets::InstallScope,
+    };
+    let central = private_tempdir()?;
+    let source = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    fs::write(source.path().join("SKILL.md"), MANIFEST)?;
+    let mut state = State::default();
+    let library = Library::open(&state, central.path())?;
+    library.import_fixture(FIXTURE_ID, source.path())?;
+    state.set_preset(Preset {
+        id: "sample".into(),
+        name: "Sample".into(),
+        members: [FIXTURE_ID.into()].into(),
+    })?;
+    let unused = library.preview_remove_unused(&state, FIXTURE_ID, true)?;
+    assert!(unused.blocker.is_none());
+    assert_eq!(library.cleanup_report(&state)?.unused.len(), 1);
+    let application = PresetApplication {
+        preset: "sample".into(),
+        scope: InstallScope::Global {
+            home: home.path().canonicalize()?,
+        },
+    };
+    state.set_preset_application(application.clone(), true)?;
+    let retained = library.preview_remove_unused(&state, FIXTURE_ID, true)?;
+    assert!(retained.blocker.is_some());
+    assert_eq!(
+        retained.preset_references,
+        std::slice::from_ref(&application)
+    );
+    let plan = library.plan(
+        &state,
+        &[nosey_core::plan::ChangeRequest::RemoveUnusedLibrarySkill {
+            artifact: FIXTURE_ID.into(),
+            external_references_checked: true,
+        }],
+    )?;
+    assert_eq!(plan.eligible(), 0);
+
+    assert!(library.apply_remove_unused(&state, &unused).is_err());
+    let report = library.cleanup_report(&state)?;
+    assert_eq!(report.unused.len(), 0);
+    assert_eq!(report.preset_references[FIXTURE_ID], [application]);
+    Ok(())
+}
