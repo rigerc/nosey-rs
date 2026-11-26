@@ -9,7 +9,7 @@
 use crate::{
     Error, State,
     changes::{InstallPreview, InstallReason, LinkAction, LinkPreview, Status},
-    library::{Library, UpdatePreview, hash},
+    library::{Library, RemovePreview, UpdatePreview, hash},
     library_io::invalid,
 };
 use serde::{Deserialize, Serialize};
@@ -47,6 +47,14 @@ pub enum ChangeRequest {
         /// Reason to remove.
         reason: InstallReason,
     },
+    /// Remove an unreferenced active library copy.
+    RemoveUnusedLibrarySkill {
+        /// Library artifact identity.
+        artifact: String,
+        /// Whether unmanaged references to this object have been ruled out.
+        #[serde(default)]
+        external_references_checked: bool,
+    },
     /// Replace a library skill's content from an explicit local source.
     UpdateLibrarySkill {
         /// Library artifact identity.
@@ -64,6 +72,7 @@ impl ChangeRequest {
             Self::UnlinkManaged { .. } => 0,
             Self::InstallLink { .. } => 1,
             Self::UpdateLibrarySkill { .. } => 2,
+            Self::RemoveUnusedLibrarySkill { .. } => 3,
         }
     }
 }
@@ -78,6 +87,8 @@ pub enum ChangeDetail {
     Unlink(LinkPreview),
     /// Library update preview.
     Update(UpdatePreview),
+    /// Library removal preview.
+    Remove(RemovePreview),
 }
 
 /// One reviewed item of a change plan.
@@ -262,6 +273,7 @@ impl Library {
             Some(ChangeDetail::Install(p)) => p.fingerprint.clone(),
             Some(ChangeDetail::Unlink(p)) => p.fingerprint.clone(),
             Some(ChangeDetail::Update(p)) => p.fingerprint.clone(),
+            Some(ChangeDetail::Remove(p)) => p.fingerprint.clone(),
             None => hash(&serde_json::to_vec(&("blocked", &id, &blocker))?),
         };
         Ok(PlannedChange {
@@ -304,6 +316,15 @@ impl Library {
                     .then(|| preview.detail.to_owned());
                 (ChangeDetail::Unlink(preview), blocker)
             }
+            ChangeRequest::RemoveUnusedLibrarySkill {
+                artifact,
+                external_references_checked,
+            } => {
+                let preview =
+                    self.preview_remove_unused(state, artifact, *external_references_checked)?;
+                let blocker = preview.blocker.map(Into::into);
+                (ChangeDetail::Remove(preview), blocker)
+            }
             ChangeRequest::UpdateLibrarySkill { artifact, source } => (
                 ChangeDetail::Update(self.preview_update(artifact, source)?),
                 None,
@@ -326,6 +347,7 @@ impl Library {
             Some(ChangeDetail::Install(p)) => self.apply(state, p).map(drop),
             Some(ChangeDetail::Unlink(p)) => self.apply_unlink(p).map(drop),
             Some(ChangeDetail::Update(p)) => self.apply_update(p).map(drop),
+            Some(ChangeDetail::Remove(p)) => self.apply_remove_unused(state, p),
             None => Err(invalid("change has no preview")),
         };
         match applied {

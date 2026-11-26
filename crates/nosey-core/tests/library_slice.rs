@@ -96,7 +96,10 @@ fn existing_link_is_never_adopted_and_stale_preview_never_overwrites()
     )?;
     assert_eq!(blocked.status, Status::Occupied);
     assert!(library.apply(&state, &blocked).is_err());
-    assert!(library.audit_links(&state)?.is_empty());
+    assert_eq!(
+        library.audit_links(&state)?,
+        [] as [nosey_core::changes::LinkAudit; 0]
+    );
     assert_eq!(fs::read_link(&preview.destination)?, preview.source);
     symlink(source.path(), root.join("linked"))?;
     assert!(
@@ -150,6 +153,13 @@ fn recovery_requires_fresh_approval_and_preserves_destination()
     pending["link_identity"] = serde_json::Value::Null;
     fs::write(&journal, serde_json::to_vec(&pending)?)?;
 
+    let cleanup = library.preview_remove_unused(&state, FIXTURE_ID, true)?;
+    assert_eq!(
+        cleanup.references[0].connection,
+        nosey_core::changes::JournalConnection::Pending
+    );
+    assert!(library.apply_remove_unused(&state, &cleanup).is_err());
+
     let confirm = library.preview_recover(&install.destination)?;
     fs::remove_file(&install.destination)?;
     assert!(library.apply_recover(&confirm).is_err());
@@ -184,9 +194,13 @@ fn recovery_requires_fresh_approval_and_preserves_destination()
     fs::remove_dir(root.join(target))?;
     fs::rename(root.join("moved"), root.join(target))?;
     fs::remove_file(&install.destination)?;
+    fs::remove_dir_all(&install.source)?;
     let drop_record = library.preview_recover(&install.destination)?;
     library.apply_recover(&drop_record)?;
-    assert!(library.audit_links(&state)?.is_empty());
+    assert_eq!(
+        library.audit_links(&state)?,
+        [] as [nosey_core::changes::LinkAudit; 0]
+    );
     Ok(())
 }
 
@@ -227,10 +241,14 @@ fn unlink_removes_one_reason_and_refuses_foreign_replacements()
     assert!(library.apply_unlink(&foreign).is_err());
     assert_eq!(fs::read_link(&manual.destination)?, manual.source);
     fs::rename(saved, &manual.destination)?;
+    fs::write(manual.source.join("SKILL.md"), "corrupted")?;
     let preview = library.preview_unlink(&manual.destination, &InstallReason::Manual)?;
     library.apply_unlink(&preview)?;
     assert!(manual.destination.symlink_metadata().is_err());
-    assert!(library.audit_links(&state)?.is_empty());
+    assert_eq!(
+        library.audit_links(&state)?,
+        [] as [nosey_core::changes::LinkAudit; 0]
+    );
     Ok(())
 }
 
@@ -270,5 +288,47 @@ fn update_preserves_managed_link_and_refuses_stale_or_incompatible_content()
     );
     assert_eq!(library.audit_links(&state)?[0].status, Status::Managed);
     assert!(library.apply_update(&approved).is_err());
+    Ok(())
+}
+
+#[test]
+fn cleanup_requires_coverage_and_respects_detached_links() -> Result<(), Box<dyn std::error::Error>>
+{
+    let central = private_tempdir()?;
+    let source = tempfile::tempdir()?;
+    let project = tempfile::tempdir()?;
+    let target = Path::new("skills");
+    fs::create_dir(project.path().join(target))?;
+    fs::write(source.path().join("SKILL.md"), MANIFEST)?;
+    let mut state = State::default();
+    let root = state.register(project.path())?;
+    let library = Library::open(&state, central.path())?;
+    library.import_fixture(FIXTURE_ID, source.path())?;
+    assert_eq!(library.cleanup_report(&state)?.unused.len(), 1);
+    let removed_source = library.preview_removed_source(&state, source.path())?;
+    assert_eq!(removed_source.len(), 1);
+    assert!(library.get(FIXTURE_ID).is_ok());
+    let unknown = library.preview_remove_unused(&state, FIXTURE_ID, false)?;
+    assert!(library.apply_remove_unused(&state, &unknown).is_err());
+    let unused = library.preview_remove_unused(&state, FIXTURE_ID, true)?;
+    assert!(unused.blocker.is_none());
+    let installed = library.preview(&state, &root, target, FIXTURE_ID, InstallReason::Manual)?;
+    library.apply(&state, &installed)?;
+    assert!(library.apply_remove_unused(&state, &unused).is_err());
+    state.projects.remove(&root);
+    let detached = library.preview_remove_unused(&state, FIXTURE_ID, true)?;
+    assert!(detached.references[0].detached);
+    assert!(library.apply_remove_unused(&state, &detached).is_err());
+    library
+        .apply_unlink(&library.preview_unlink(&installed.destination, &InstallReason::Manual)?)?;
+    let request = nosey_core::plan::ChangeRequest::RemoveUnusedLibrarySkill {
+        artifact: FIXTURE_ID.into(),
+        external_references_checked: true,
+    };
+    let plan = library.plan(&state, &[request])?;
+    assert_eq!(plan.eligible(), 1);
+    let result = library.apply_plan(&state, &plan)?;
+    assert_eq!(result[0].outcome, nosey_core::plan::ChangeOutcome::Applied);
+    assert!(library.get(FIXTURE_ID).is_err());
     Ok(())
 }

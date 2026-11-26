@@ -102,17 +102,7 @@ impl Library {
             .map(|fd| exact_link(fd, leaf, &record.source))
             .transpose()?
             .flatten();
-        let (action, detail) = if !artifact.as_ref().is_some_and(|skill| {
-            record.source == self.object_dir(&record.artifact).join("skill")
-                && leaf == Path::new(&skill.name)
-                && (record.link_identity.is_some()
-                    || record
-                        .tree_sha256
-                        .as_ref()
-                        .is_none_or(|digest| digest == &skill.source.tree_sha256))
-        }) {
-            (LinkAction::Blocked, "artifact changed or unavailable")
-        } else if parent_identity != Some(record.parent_identity) {
+        let (action, detail) = if parent_identity != Some(record.parent_identity) {
             (
                 LinkAction::Blocked,
                 "destination parent changed or unavailable",
@@ -120,7 +110,11 @@ impl Library {
         } else if metadata.is_none() && observed.is_none() {
             (LinkAction::DropRecord, "destination is absent")
         } else if record.link_identity.is_none()
-            && record.tree_sha256.is_some()
+            && artifact.as_ref().is_some_and(|skill| {
+                record.source == self.object_dir(&record.artifact).join("skill")
+                    && leaf == Path::new(&skill.name)
+                    && record.tree_sha256.as_ref() == Some(&skill.source.tree_sha256)
+            })
             && observed.is_some()
             && metadata.as_ref().map(stat_identity) == observed
         {
@@ -216,7 +210,6 @@ impl Library {
     ) -> Result<(LinkPreview, LinkRecord), Error> {
         let record = self.maintenance_record(destination)?;
         let leaf = name(destination)?;
-        let artifact = self.get(&record.artifact).ok();
         let parent = directory(journal_parent(destination)?).ok();
         let parent_identity = parent.as_ref().map(identity).transpose()?;
         let observed = parent
@@ -229,11 +222,11 @@ impl Library {
             .map(|fd| stat(fd, leaf))
             .transpose()?
             .flatten();
-        let (action, detail) = if !artifact.as_ref().is_some_and(|skill| {
-            record.source == self.object_dir(&record.artifact).join("skill")
-                && leaf == Path::new(&skill.name)
-        }) {
-            (LinkAction::Blocked, "artifact invalid or unavailable")
+        let (action, detail) = if record.source != self.object_dir(&record.artifact).join("skill") {
+            (
+                LinkAction::Blocked,
+                "journal source does not match its artifact",
+            )
         } else if !record.reasons.contains(reason) {
             (LinkAction::Blocked, "install reason is absent")
         } else if parent_identity != Some(record.parent_identity)
@@ -262,7 +255,6 @@ impl Library {
             detail,
             reason,
             &record,
-            artifact,
             parent_identity,
             observed,
             metadata.map(|s| (stat_identity(&s), s.st_mode, s.st_ctime, s.st_ctime_nsec)),

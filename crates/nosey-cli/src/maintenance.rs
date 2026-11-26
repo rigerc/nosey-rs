@@ -1,5 +1,7 @@
 //! CLI entry points for previewed library maintenance.
 
+mod cleanup;
+
 use anyhow::Result;
 use clap::Subcommand;
 use nosey_core::{State, changes::InstallReason, library::Library};
@@ -8,6 +10,8 @@ use std::path::PathBuf;
 #[derive(Subcommand)]
 /// Library maintenance subcommands flattened into the main CLI.
 pub enum Command {
+    #[command(flatten)]
+    Cleanup(cleanup::Command),
     /// Show how an interrupted link journal can be recovered.
     PreviewRecover {
         library: PathBuf,
@@ -67,6 +71,7 @@ fn parse_install_reason(value: &str) -> Result<InstallReason, String> {
 /// Run a maintenance command against the loaded project state.
 pub fn run(command: Command, state: &State) -> Result<()> {
     match command {
+        Command::Cleanup(command) => cleanup::run(command, state)?,
         Command::PreviewRecover {
             library,
             destination,
