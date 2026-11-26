@@ -11,6 +11,7 @@ use crate::{
     changes::{InstallPreview, InstallReason, LinkAction, LinkPreview, Status},
     library::{Library, UpdatePreview, hash},
     library_io::invalid,
+    targets::InstallScope,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -40,6 +41,18 @@ pub enum ChangeRequest {
         /// Independent reason for the link.
         reason: InstallReason,
     },
+    /// Install into the enabled targets for a global or project scope.
+    InstallScoped {
+        /// Scope and its root.
+        scope: InstallScope,
+        /// Select one enabled target, or expand to all compatible targets when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<PathBuf>,
+        /// Library artifact identity.
+        artifact: String,
+        /// Independent reason for the link.
+        reason: InstallReason,
+    },
     /// Remove one reason from a managed link, and the link with its last reason.
     UnlinkManaged {
         /// Exact absolute link destination.
@@ -62,7 +75,7 @@ impl ChangeRequest {
     const fn apply_rank(&self) -> u8 {
         match self {
             Self::UnlinkManaged { .. } => 0,
-            Self::InstallLink { .. } => 1,
+            Self::InstallLink { .. } | Self::InstallScoped { .. } => 1,
             Self::UpdateLibrarySkill { .. } => 2,
         }
     }
@@ -104,6 +117,8 @@ pub struct ChangePlan {
     pub changes: Vec<PlannedChange>,
     /// Fingerprint over every item, supplied for explicit approval.
     pub fingerprint: String,
+    #[serde(skip)]
+    requests: Vec<ChangeRequest>,
 }
 
 impl ChangePlan {
@@ -177,6 +192,33 @@ fn request_id(request: &ChangeRequest) -> Result<String, Error> {
     Ok(hash(&serde_json::to_vec(request)?))
 }
 
+fn expand(state: &State, request: &ChangeRequest) -> Vec<ChangeRequest> {
+    let ChangeRequest::InstallScoped {
+        scope,
+        target: None,
+        artifact,
+        reason,
+    } = request
+    else {
+        return vec![request.clone()];
+    };
+    let paths = state
+        .targets()
+        .paths(matches!(scope, InstallScope::Global { .. }));
+    if paths.is_empty() {
+        return vec![request.clone()];
+    }
+    paths
+        .into_iter()
+        .map(|target| ChangeRequest::InstallScoped {
+            scope: scope.clone(),
+            target: Some(target),
+            artifact: artifact.clone(),
+            reason: reason.clone(),
+        })
+        .collect()
+}
+
 impl Library {
     /// Preview every request without changing anything.
     ///
@@ -191,9 +233,14 @@ impl Library {
         let mut seen = BTreeSet::new();
         let mut changes = Vec::new();
         for request in requests {
-            let id = request_id(request)?;
-            if seen.insert(id.clone()) {
-                changes.push(self.plan_one(state, id, request)?);
+            for request in expand(state, request) {
+                let id = request_id(&request)?;
+                if seen.insert(id.clone()) {
+                    if changes.len() == MAX_PLAN_CHANGES {
+                        return Err(invalid("too many changes after target expansion"));
+                    }
+                    changes.push(self.plan_one(state, id, &request)?);
+                }
             }
         }
         let fingerprint = hash(&serde_json::to_vec(
@@ -205,6 +252,7 @@ impl Library {
         Ok(ChangePlan {
             changes,
             fingerprint,
+            requests: requests.to_vec(),
         })
     }
 
@@ -220,8 +268,7 @@ impl Library {
         state: &State,
         approved: &ChangePlan,
     ) -> Result<Vec<ChangeResult>, Error> {
-        let requests: Vec<_> = approved.changes.iter().map(|c| c.request.clone()).collect();
-        let fresh = self.plan(state, &requests)?;
+        let fresh = self.plan(state, &approved.requests)?;
         if &fresh != approved {
             return Err(invalid("stale change plan; review again"));
         }
@@ -278,23 +325,35 @@ impl Library {
         state: &State,
         request: &ChangeRequest,
     ) -> Result<(ChangeDetail, Option<String>), Error> {
-        Ok(match request {
+        let install = match request {
             ChangeRequest::InstallLink {
                 project,
                 target,
                 artifact,
                 reason,
+            } => Some(self.preview(state, project, target, artifact, reason.clone())?),
+            ChangeRequest::InstallScoped {
+                scope,
+                target,
+                artifact,
+                reason,
             } => {
-                let preview = self.preview(state, project, target, artifact, reason.clone())?;
-                let blocker = match preview.status {
-                    Status::Available | Status::Managed => None,
-                    Status::Occupied => {
-                        Some("destination is occupied by a path Nosey does not own")
-                    }
-                    Status::RecoveryRequired => Some("destination link journal needs recovery"),
-                };
-                (ChangeDetail::Install(preview), blocker.map(Into::into))
+                let target = target
+                    .as_deref()
+                    .ok_or_else(|| invalid("no enabled targets for scope"))?;
+                Some(self.preview_scoped(state, scope, target, artifact, reason.clone())?)
             }
+            _ => None,
+        };
+        if let Some(preview) = install {
+            let blocker = match preview.status {
+                Status::Available | Status::Managed => None,
+                Status::Occupied => Some("destination is occupied by a path Nosey does not own"),
+                Status::RecoveryRequired => Some("destination link journal needs recovery"),
+            };
+            return Ok((ChangeDetail::Install(preview), blocker.map(Into::into)));
+        }
+        Ok(match request {
             ChangeRequest::UnlinkManaged {
                 destination,
                 reason,
@@ -308,6 +367,9 @@ impl Library {
                 ChangeDetail::Update(self.preview_update(artifact, source)?),
                 None,
             ),
+            ChangeRequest::InstallLink { .. } | ChangeRequest::InstallScoped { .. } => {
+                return Err(invalid("install preview missing"));
+            }
         })
     }
 

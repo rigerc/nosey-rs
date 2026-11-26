@@ -11,6 +11,7 @@ use crate::{
     Error, State,
     library::{Library, MAX_RECORD, atomic_json, hash},
     library_io::{descend, directory, identity, invalid, read, relative, stat, stat_identity},
+    targets::InstallScope,
 };
 use rustix::fs::{FileType, readlinkat, symlinkat};
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,8 @@ pub enum Status {
 #[serde(deny_unknown_fields)]
 struct LinkRecord {
     project: PathBuf,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    global: bool,
     destination: PathBuf,
     artifact: String,
     source: PathBuf,
@@ -61,12 +64,15 @@ struct LinkRecord {
     tree_sha256: Option<String>,
 }
 
-/// Explicit read-only preview for a single project-local installation.
+/// Explicit read-only preview for a single installation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallPreview {
-    /// Registered canonical project.
+    /// Registered project or supplied home directory.
     pub project: PathBuf,
+    /// Whether this preview installs into a global agent location.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub global: bool,
     /// Explicit existing project-relative target directory.
     pub target: PathBuf,
     /// Fixture artifact identity.
@@ -98,6 +104,9 @@ pub struct LinkAudit {
     pub reasons: BTreeSet<InstallReason>,
     /// True if project is no longer registered.
     pub detached: bool,
+    /// Whether the original install used a global agent location.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub global: bool,
     /// Current observed ownership status.
     pub status: Status,
 }
@@ -205,6 +214,41 @@ impl Library {
         {
             return Err(invalid("unregistered or overlapping project"));
         }
+        self.preview_at(project, false, target, artifact, reason)
+    }
+
+    pub(crate) fn preview_scoped(
+        &self,
+        state: &State,
+        scope: &InstallScope,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+    ) -> Result<InstallPreview, Error> {
+        let global = matches!(scope, InstallScope::Global { .. });
+        if !state.targets().paths(global).contains(target) {
+            return Err(invalid("target is not enabled for this scope"));
+        }
+        match scope {
+            InstallScope::Project { root } => self.preview(state, root, target, artifact, reason),
+            InstallScope::Global { home } => {
+                let destination = home.join(target);
+                if destination.starts_with(&self.root) || self.root.starts_with(&destination) {
+                    return Err(invalid("global target overlaps the library"));
+                }
+                self.preview_at(home.clone(), true, target, artifact, reason)
+            }
+        }
+    }
+
+    fn preview_at(
+        &self,
+        project: PathBuf,
+        global: bool,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+    ) -> Result<InstallPreview, Error> {
         if let InstallReason::Preset(id) = &reason
             && (id.is_empty() || id.len() > MAX_PRESET_ID || id.chars().any(char::is_control))
         {
@@ -219,7 +263,7 @@ impl Library {
         let status = classify(&parent, Path::new(&skill.name), &source, record.as_ref())?;
         let status = if record
             .as_ref()
-            .is_some_and(|r| r.artifact != artifact || r.project != project)
+            .is_some_and(|r| r.artifact != artifact || r.project != project || r.global != global)
         {
             Status::RecoveryRequired
         } else {
@@ -227,6 +271,7 @@ impl Library {
         };
         let mut preview = InstallPreview {
             project,
+            global,
             target,
             artifact: artifact.into(),
             destination,
@@ -256,13 +301,25 @@ impl Library {
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
-        let fresh = self.preview(
-            state,
-            &approved.project,
-            &approved.target,
-            &approved.artifact,
-            approved.reason.clone(),
-        )?;
+        let fresh = if approved.global {
+            self.preview_scoped(
+                state,
+                &InstallScope::Global {
+                    home: approved.project.clone(),
+                },
+                &approved.target,
+                &approved.artifact,
+                approved.reason.clone(),
+            )?
+        } else {
+            self.preview(
+                state,
+                &approved.project,
+                &approved.target,
+                &approved.artifact,
+                approved.reason.clone(),
+            )?
+        };
         if &fresh != approved {
             return Err(invalid("stale preview; review again"));
         }
@@ -299,6 +356,7 @@ impl Library {
         }
         let mut record = LinkRecord {
             project: fresh.project,
+            global: fresh.global,
             destination: fresh.destination,
             artifact: fresh.artifact,
             source: fresh.source,
@@ -366,7 +424,8 @@ impl Library {
             };
             result.push(LinkAudit {
                 artifact: r.artifact,
-                detached: !state.projects.contains_key(&r.project),
+                detached: !r.global && !state.projects.contains_key(&r.project),
+                global: r.global,
                 project: r.project,
                 destination: r.destination,
                 reasons: r.reasons,

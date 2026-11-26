@@ -287,9 +287,16 @@ impl Library {
             .strip_prefix(&record.project)
             .map_err(|_| invalid("journal project mismatch"))?;
         crate::library_io::relative(relative)?;
+        let boundary = if record.global {
+            destination
+                .parent()
+                .ok_or_else(|| invalid("missing global target"))?
+        } else {
+            &record.project
+        };
         if !record.project.is_absolute()
-            || record.project.starts_with(&self.root)
-            || self.root.starts_with(&record.project)
+            || boundary.starts_with(&self.root)
+            || self.root.starts_with(boundary)
             || record.reasons.is_empty()
         {
             return Err(invalid("invalid journal project or reasons"));

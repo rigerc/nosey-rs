@@ -15,7 +15,7 @@ cargo run -p nosey-cli -- --state /absolute/central/state.json apply-install /ab
 cargo run -p nosey-cli -- --state /absolute/central/state.json audit-links /absolute/central/library
 ```
 
-Local fixtures use a reserved development identifier prefix; a local tree hash is not an SDK digest or publisher endorsement. Acquisition copies only bounded regular files and directories, validates a restricted UTF-8 Agent Skill frontmatter, stages privately, verifies staged content and publishes one active copy atomically without replacement. No scripts are executed. The user supplies the existing target directory; no agent target configuration is inferred. Install revalidates the stored content and reviewed destination, uses no-follow descriptor-relative parent opens and atomic non-replacing symlink creation. A pending journal precedes creation; interrupted operations remain visible and cannot be silently adopted. Independent install reasons are retained. Unregister keeps link journals and library content; audits show detached ownership. Global installation, external acquisition, preset synchronization and automatic installation remain outside this slice.
+Local fixtures use a reserved development identifier prefix; a local tree hash is not an SDK digest or publisher endorsement. Acquisition copies only bounded regular files and directories, validates a restricted UTF-8 Agent Skill frontmatter, stages privately, verifies staged content and publishes one active copy atomically without replacement. No scripts are executed. Install revalidates the stored content and reviewed destination, uses no-follow descriptor-relative parent opens and atomic non-replacing symlink creation. A pending journal precedes creation; interrupted operations remain visible and cannot be silently adopted. Independent install reasons are retained. Unregister keeps link journals and library content; audits show detached ownership. External acquisition, preset synchronization and automatic installation remain outside this slice.
 
 Use these subcommands with the same `--state` argument. Review each preview and pass its fingerprint to the matching apply command.
 
@@ -56,7 +56,29 @@ apply-plan <library> <requests.json> [--only <change-id>]... --approve <plan-fin
 
 `plan` previews every request without changing anything. Duplicate requests collapse to one change, and each change gets a stable ID. A request that cannot be previewed, or whose destination is occupied, unowned or needs recovery, is listed with a `blocker` and is never executed. The plan fingerprint covers every listed change, so approval applies to exactly the reviewed set; use `--only` to plan and approve a subset. `apply-plan` refuses the whole batch before any mutation if the fresh plan no longer matches the approval.
 
-Approved changes then run independently: unlinks first, then installs, then library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings, configured agent targets and shared acquisition are not part of this slice yet.
+Approved changes then run independently: unlinks first, then installs, then library updates, so replacing content never invalidates a reviewed link. Each change is revalidated immediately before it runs. Results are reported per change in plan order as `applied`, `blocked`, `stale` (state changed after review, possibly by an earlier change in the same batch) or `failed`. A failure does not stop later changes, and successful changes are kept. `apply-plan` exits non-zero when any change is stale or failed; retry by planning again. Advisory dependency and conflict warnings and shared acquisition remain outside this slice.
+
+## Configured targets and inventory
+
+Central state defaults to the shared `.agents/skills` target. Use
+`set-targets --agents --claude --custom .custom/skills` to replace the
+desired configuration. This command leaves existing links in place. Every
+project inherits the same project-relative targets. Global scope uses the
+enabled built-in locations under the explicitly supplied home.
+
+A plan request with `"action": "install_scoped"` accepts
+`"scope": {"kind": "project", "root": "/absolute/project"}` or
+`"scope": {"kind": "global", "home": "/absolute/home"}`. It expands into one
+preview per enabled compatible target. Each target directory must already
+exist. The explicit `install_link` request remains available.
+
+Run `inventory LIBRARY --project ROOT --home HOME` to include global links
+in project coverage, or `inventory LIBRARY --home HOME` for global inventory.
+The JSON groups managed links by artifact ID and readable unmanaged
+manifests by name. It lists other unmanaged entries, partial coverage,
+journal entries needing recovery, and journals outside the enabled targets.
+Inventory never follows unmanaged symlinks. Settings synchronization is
+outside this slice.
 
 ## Limitations
 

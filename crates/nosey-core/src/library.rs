@@ -4,7 +4,7 @@
 //!
 //! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 
-mod manifest;
+pub(crate) mod manifest;
 mod update;
 pub use update::UpdatePreview;
 
@@ -129,6 +129,18 @@ impl Library {
     /// Rejects linked/nonprivate paths, overlapping projects and concurrent
     /// access by another cooperating Nosey library operation.
     pub fn open(state: &State, path: &Path) -> Result<Self, Error> {
+        Self::open_existing(state, path, true)
+    }
+
+    /// Open an initialized library without creating storage or a lock file.
+    ///
+    /// # Errors
+    /// Rejects missing, unsafe, uninitialized or locked library storage.
+    pub fn open_initialized(state: &State, path: &Path) -> Result<Self, Error> {
+        Self::open_existing(state, path, false)
+    }
+
+    fn open_existing(state: &State, path: &Path, initialize: bool) -> Result<Self, Error> {
         let root = path.canonicalize()?;
         if root == Path::new("/")
             || state
@@ -143,26 +155,26 @@ impl Library {
         }
         private_directory(&root)?;
         let fd = directory(&root)?;
+        let mut flags = OFlags::RDWR | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC;
+        if initialize {
+            flags |= OFlags::CREATE;
+        }
         let lock = File::from(
-            openat(
-                &fd,
-                "library.lock",
-                OFlags::RDWR
-                    | OFlags::CREATE
-                    | OFlags::NOFOLLOW
-                    | OFlags::NONBLOCK
-                    | OFlags::CLOEXEC,
-                Mode::RUSR | Mode::WUSR,
-            )
-            .map_err(std::io::Error::from)?,
+            openat(&fd, "library.lock", flags, Mode::RUSR | Mode::WUSR)
+                .map_err(std::io::Error::from)?,
         );
         if !lock.metadata()?.is_file() {
             return Err(invalid("invalid library lock"));
         }
         lock.try_lock()
             .map_err(|_| invalid("library busy or lock unavailable"))?;
-        child_dir(&root, "objects")?;
-        child_dir(&root, "links")?;
+        for child in ["objects", "links"] {
+            if initialize {
+                child_dir(&root, child)?;
+            } else {
+                private_directory(&root.join(child))?;
+            }
+        }
         Ok(Self {
             root,
             _lock: lock,

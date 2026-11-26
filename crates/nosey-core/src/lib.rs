@@ -16,6 +16,9 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 pub mod changes;
 mod freshness;
+/// Read-only effective skill inventory.
+#[cfg(target_os = "linux")]
+pub mod inventory;
 /// Central local fixture library.
 #[cfg(target_os = "linux")]
 pub mod library;
@@ -27,6 +30,8 @@ pub mod plan;
 mod project_activity;
 /// Native read-only project target discovery.
 pub mod skill_discovery;
+/// Agent target configuration and install scopes.
+pub mod targets;
 pub use freshness::{Freshness, SavedEvaluation};
 
 /// Central state failures.
@@ -62,6 +67,8 @@ pub struct State {
     /// Last explicit project activity, using Kitter's millisecond ordering.
     #[serde(default)]
     pub project_activity: BTreeMap<PathBuf, u64>,
+    #[serde(default)]
+    targets: targets::TargetConfig,
 }
 
 impl State {
@@ -84,7 +91,9 @@ impl State {
         if data.len() > 32 * 1024 * 1024 {
             return Err(Error::Invalid("state size limit".into()));
         }
-        Ok(serde_json::from_slice(&data)?)
+        let state: Self = serde_json::from_slice(&data)?;
+        state.targets.validate()?;
+        Ok(state)
     }
     /// Persist atomically to an existing central directory outside all registered projects.
     /// # Errors

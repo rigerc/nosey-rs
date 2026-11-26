@@ -5,7 +5,8 @@ use serde_saphyr::granit_parser::{Scanner, StrInput, TokenType};
 
 const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 
-pub(super) fn manifest(bytes: &[u8]) -> Result<String, Error> {
+/// Read and validate the name and required metadata of a bounded skill manifest.
+pub fn manifest(bytes: &[u8]) -> Result<String, Error> {
     let text = std::str::from_utf8(bytes).map_err(|_| invalid("manifest is not UTF-8"))?;
     let mut lines = text.lines();
     if lines.next() != Some("---") {

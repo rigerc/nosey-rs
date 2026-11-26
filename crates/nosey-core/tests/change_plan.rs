@@ -8,6 +8,7 @@ use nosey_core::{
     plan::{ChangeOutcome, ChangeRequest, load_requests},
 };
 use std::{
+    collections::BTreeSet,
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -204,5 +205,172 @@ fn request_files_are_strict_and_bounded() -> TestResult {
         vec![r#"{"action":"unlink_managed","destination":"/p/a","reason":{"kind":"manual"}}"#; 300];
     fs::write(&path, format!(r#"{{"changes":[{}]}}"#, many.join(",")))?;
     assert!(load_requests(&path).is_err());
+    Ok(())
+}
+
+#[test]
+fn scoped_links_group_and_inherit_global_coverage() -> TestResult {
+    use nosey_core::targets::{AgentTarget, InstallScope, TargetConfig};
+
+    let mut f = fixture()?;
+    let home = tempfile::tempdir()?;
+    for root in [&f.root, home.path()] {
+        fs::create_dir_all(root.join(".agents/skills"))?;
+        fs::create_dir_all(root.join(".claude/skills"))?;
+    }
+    f.state.set_targets(TargetConfig {
+        agents: [AgentTarget::Agents, AgentTarget::Claude].into(),
+        custom: ["skills".into()].into(),
+    })?;
+    let scoped = |scope| ChangeRequest::InstallScoped {
+        scope,
+        target: None,
+        artifact: id("alpha"),
+        reason: InstallReason::Manual,
+    };
+    let global = InstallScope::Global {
+        home: home.path().into(),
+    };
+    let project = InstallScope::Project {
+        root: f.root.clone(),
+    };
+    let plan = f.library.plan(&f.state, &[scoped(global)])?;
+    assert_eq!(plan.eligible(), 2);
+    assert!(
+        f.library
+            .apply_plan(&f.state, &plan)?
+            .iter()
+            .all(|r| matches!(r.outcome, ChangeOutcome::Applied))
+    );
+    let plan = f.library.plan(&f.state, &[scoped(project.clone())])?;
+    assert_eq!(plan.eligible(), 3);
+    skill(&f.root.join("skills"), "external", "Local.")?;
+    let inventory = f.library.inventory(&f.state, &project, Some(home.path()))?;
+    assert_eq!(inventory.managed[&id("alpha")].covered_targets.len(), 2);
+    assert!(inventory.managed[&id("alpha")].partial);
+    assert_eq!(inventory.unmanaged["external"].len(), 1);
+    assert_eq!(f.library.audit_links(&f.state)?.len(), 2);
+    fs::remove_file(home.path().join(".agents/skills/alpha"))?;
+    let inventory = f.library.inventory(&f.state, &project, Some(home.path()))?;
+    assert_eq!(inventory.managed[&id("alpha")].covered_targets.len(), 1);
+    assert_eq!(inventory.managed[&id("alpha")].links.len(), 2);
+    let results = f.library.apply_plan(&f.state, &plan)?;
+    assert!(
+        results
+            .iter()
+            .all(|result| matches!(result.outcome, ChangeOutcome::Applied))
+    );
+    let inventory = f.library.inventory(&f.state, &project, Some(home.path()))?;
+    assert_eq!(inventory.managed[&id("alpha")].covered_targets.len(), 3);
+    assert!(!inventory.managed[&id("alpha")].partial);
+    let state_file = f.sources.join("state.json");
+    f.state.save(&state_file)?;
+    assert_eq!(State::load(&state_file)?.targets(), f.state.targets());
+    Ok(())
+}
+
+#[test]
+fn validates_config_and_rejects_redirected_global_parents() -> TestResult {
+    use nosey_core::targets::{InstallScope, TargetConfig};
+    use std::os::unix::fs::symlink;
+    let mut f = fixture()?;
+    let config = f.sources.join("old-state.json");
+    fs::write(&config, r#"{"projects":{}}"#)?;
+    assert_eq!(State::load(&config)?.targets(), &TargetConfig::default());
+    for path in ["/abs", "one/../two", "one/\n", ""] {
+        assert!(
+            f.state
+                .set_targets(TargetConfig {
+                    custom: [path.into()].into(),
+                    ..TargetConfig::default()
+                })
+                .is_err()
+        );
+    }
+    symlink(&f.sources, f.root.join("redirect"))?;
+    assert!(
+        f.state
+            .set_targets(TargetConfig {
+                custom: ["redirect/skills".into()].into(),
+                ..TargetConfig::default()
+            })
+            .is_err()
+    );
+    let home = tempfile::tempdir()?;
+    symlink(&f.sources, home.path().join(".agents"))?;
+    let plan = f.library.plan(
+        &f.state,
+        &[ChangeRequest::InstallScoped {
+            scope: InstallScope::Global {
+                home: home.path().into(),
+            },
+            target: None,
+            artifact: id("alpha"),
+            reason: InstallReason::Manual,
+        }],
+    )?;
+    assert_eq!(plan.eligible(), 0);
+    assert_eq!(plan.changes.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn global_plan_preserves_unmanaged_links_and_settings_preserve_managed_links() -> TestResult {
+    use nosey_core::{
+        changes::LinkAction,
+        targets::{AgentTarget, InstallScope, TargetConfig},
+    };
+    use std::os::unix::fs::symlink;
+
+    let mut f = fixture()?;
+    let home = tempfile::tempdir()?;
+    let target = home.path().join(".agents/skills");
+    fs::create_dir_all(&target)?;
+    let requests = [ChangeRequest::InstallScoped {
+        scope: InstallScope::Global {
+            home: home.path().into(),
+        },
+        target: None,
+        artifact: id("alpha"),
+        reason: InstallReason::Manual,
+    }];
+    let preexisting = target.join("alpha");
+    let plan = f.library.plan(&f.state, &requests)?;
+    symlink(&f.sources, &preexisting)?;
+    assert!(f.library.apply_plan(&f.state, &plan).is_err());
+    assert_eq!(f.library.plan(&f.state, &requests)?.eligible(), 0);
+    assert_eq!(fs::read_link(&preexisting)?, f.sources);
+    assert!(f.library.audit_links(&f.state)?.is_empty());
+    fs::remove_file(&preexisting)?;
+
+    let plan = f.library.plan(&f.state, &requests)?;
+    f.state.set_targets(TargetConfig {
+        agents: [AgentTarget::Agents, AgentTarget::Claude].into(),
+        ..TargetConfig::default()
+    })?;
+    assert!(f.library.apply_plan(&f.state, &plan).is_err());
+
+    let plan = f.library.plan(&f.state, &requests)?;
+    assert!(matches!(
+        f.library.apply_plan(&f.state, &plan)?[0].outcome,
+        ChangeOutcome::Applied
+    ));
+    f.state.set_targets(TargetConfig {
+        agents: BTreeSet::new(),
+        custom: BTreeSet::new(),
+    })?;
+    assert!(fs::symlink_metadata(&preexisting)?.is_symlink());
+    let ChangeRequest::InstallScoped { scope, .. } = &requests[0] else {
+        return Err("unexpected request".into());
+    };
+    let inventory = f.library.inventory(&f.state, scope, None)?;
+    assert!(inventory.orphaned.contains(&preexisting));
+
+    let unlink = f
+        .library
+        .preview_unlink(&preexisting, &InstallReason::Manual)?;
+    assert!(!matches!(unlink.action, LinkAction::Blocked));
+    f.library.apply_unlink(&unlink)?;
+    assert!(fs::symlink_metadata(&preexisting).is_err());
     Ok(())
 }
