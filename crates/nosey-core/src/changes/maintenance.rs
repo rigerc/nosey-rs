@@ -180,6 +180,10 @@ impl Library {
     /// Rejects stale approvals, missing reasons and changed destinations.
     pub fn apply_unlink(&self, approved: &LinkPreview) -> Result<LinkAction, Error> {
         let _mutation = self.lock_mutation()?;
+        self.apply_unlink_locked(approved)
+    }
+
+    pub(crate) fn apply_unlink_locked(&self, approved: &LinkPreview) -> Result<LinkAction, Error> {
         let reason = approved
             .reason
             .as_ref()

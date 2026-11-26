@@ -15,7 +15,7 @@ cargo run -p nosey-cli -- --state /absolute/central/state.json apply-install /ab
 cargo run -p nosey-cli -- --state /absolute/central/state.json audit-links /absolute/central/library
 ```
 
-Local fixtures use a reserved development identifier prefix; a local tree hash is not an SDK digest or publisher endorsement. Acquisition copies only bounded regular files and directories, validates a restricted UTF-8 Agent Skill frontmatter, stages privately, verifies staged content and publishes one active copy atomically without replacement. No scripts are executed. Install revalidates the stored content and reviewed destination, uses no-follow descriptor-relative parent opens and atomic non-replacing symlink creation. A pending journal precedes creation; interrupted operations remain visible and cannot be silently adopted. Independent install reasons are retained. Unregister keeps link journals and library content; audits show detached ownership. External acquisition, preset synchronization and automatic installation remain outside this slice.
+Local fixtures use a reserved development identifier prefix; a local tree hash is not an SDK digest or publisher endorsement. Acquisition copies only bounded regular files and directories, validates a restricted UTF-8 Agent Skill frontmatter, stages privately, verifies staged content and publishes one active copy atomically without replacement. No scripts are executed. Install revalidates the stored content and reviewed destination, uses no-follow descriptor-relative parent opens and atomic non-replacing symlink creation. A pending journal precedes creation; interrupted operations remain visible and cannot be silently adopted. Independent install reasons are retained. Unregister keeps link journals and library content; audits show detached ownership. External acquisition and automatic installation remain outside this slice.
 
 Use these subcommands with the same `--state` argument. Review each preview and pass its fingerprint to the matching apply command.
 
@@ -77,8 +77,31 @@ in project coverage, or `inventory LIBRARY --home HOME` for global inventory.
 The JSON groups managed links by artifact ID and readable unmanaged
 manifests by name. It lists other unmanaged entries, partial coverage,
 journal entries needing recovery, and journals outside the enabled targets.
-Inventory never follows unmanaged symlinks. Settings synchronization is
-outside this slice.
+Inventory never follows unmanaged symlinks.
+
+## Target synchronization and linked presets
+
+`sync-targets LIBRARY` previews changes for registered projects and any homes
+recorded in managed journals. It carries each installation reason to enabled
+targets and queues removal of reasons from disabled targets. If a replacement
+is blocked or fails, the old target keeps the affected reason.
+
+```text
+set-preset ID NAME [--member ARTIFACT]...
+edit-preset ID [--add ARTIFACT]... [--remove ARTIFACT]...
+apply-preset LIBRARY ID (--project ROOT | --home HOME)
+unapply-preset LIBRARY ID (--project ROOT | --home HOME)
+sync-presets LIBRARY [--approve FINGERPRINT]
+sync-targets LIBRARY [--approve FINGERPRINT]
+```
+
+Preset commands record desired definitions and applications in central state.
+Application and removal commands also show the pending preset plan. Review
+`sync-presets` after editing membership. A removed member or application
+releases only its preset reason; manual, recommendation and other preset
+reasons retain their links. Legacy state loads with empty preset fields.
+Both synchronization commands print a JSON plan by default. Pass its fingerprint
+with `--approve` to apply the reviewed changes. Both use the shared plan size limit.
 
 ## Limitations
 

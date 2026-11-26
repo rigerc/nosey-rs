@@ -4,6 +4,8 @@
 //! Unlike Kitter, no occupied path is replaced, and no unmanaged link adopted.
 //! Pending journal records survive an interrupted apply.
 
+use crate::presets::MAX_PRESET_ID;
+
 mod maintenance;
 pub use maintenance::{LinkAction, LinkPreview};
 
@@ -110,9 +112,6 @@ pub struct LinkAudit {
     /// Current observed ownership status.
     pub status: Status,
 }
-
-/// Longest accepted preset identity in an install reason.
-const MAX_PRESET_ID: usize = 128;
 
 fn name(path: &Path) -> Result<&Path, Error> {
     path.file_name()
@@ -301,6 +300,14 @@ impl Library {
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
+        self.apply_install_locked(state, approved)
+    }
+
+    pub(crate) fn apply_install_locked(
+        &self,
+        state: &State,
+        approved: &InstallPreview,
+    ) -> Result<Status, Error> {
         let fresh = if approved.global {
             self.preview_scoped(
                 state,
