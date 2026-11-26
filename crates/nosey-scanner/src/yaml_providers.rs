@@ -1,7 +1,7 @@
 //! Passive Compose and GitHub Actions providers adapted from Nosey-9.
 //! Conservative YAML subset: no aliases, anchors, explicit tags or directives.
 
-use serde_yaml::Value;
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 fn parse(text: &str) -> Result<Value, &'static str> {
@@ -10,8 +10,22 @@ fn parse(text: &str) -> Result<Value, &'static str> {
     if text.contains(['&', '*', '!', '%']) {
         return Err("unsupported-provider-yaml");
     }
-    let v: Value = serde_yaml::from_str(text).map_err(|_| "malformed-provider-yaml")?;
-    if !v.is_mapping() {
+    let v: Value = serde_saphyr::from_str_with_options(
+        text,
+        serde_saphyr::options! {
+            duplicate_keys: serde_saphyr::options::DuplicateKeyPolicy::Error,
+            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
+            budget: serde_saphyr::budget! {
+                max_documents: 1,
+                max_depth: 64,
+                max_anchors: 0,
+                max_aliases: 0,
+                max_total_scalar_bytes: text.len(),
+            },
+        },
+    )
+    .map_err(|_| "malformed-provider-yaml")?;
+    if !v.is_object() {
         return Err("invalid-provider-yaml-root");
     }
     Ok(v)
@@ -31,11 +45,11 @@ pub(crate) fn compose(text: &str) -> Result<BTreeSet<String>, &'static str> {
     let doc = parse(text)?;
     let mut out = BTreeSet::new();
     if let Some(services) = doc.get("services") {
-        for (key, service) in services.as_mapping().ok_or("invalid-compose-services")? {
-            if key.as_str() == Some("<<") || service.get("<<").is_some() {
+        for (key, service) in services.as_object().ok_or("invalid-compose-services")? {
+            if key == "<<" || service.get("<<").is_some() {
                 return Err("unsupported-compose-merge");
             }
-            if !service.is_mapping() {
+            if !service.is_object() {
                 return Err("invalid-compose-service");
             }
             if let Some(image) = service.get("image") {
@@ -53,7 +67,7 @@ pub(crate) fn compose(text: &str) -> Result<BTreeSet<String>, &'static str> {
 }
 
 fn action(node: &Value, out: &mut BTreeSet<String>) -> Result<(), &'static str> {
-    if node.get("<<").is_some() || !node.is_mapping() {
+    if node.get("<<").is_some() || !node.is_object() {
         return Err("invalid-action-node");
     }
     if let Some(uses) = node.get("uses") {
@@ -71,7 +85,7 @@ fn action(node: &Value, out: &mut BTreeSet<String>) -> Result<(), &'static str> 
 
 fn steps(node: Option<&Value>, out: &mut BTreeSet<String>) -> Result<(), &'static str> {
     if let Some(node) = node {
-        for step in node.as_sequence().ok_or("invalid-action-steps")? {
+        for step in node.as_array().ok_or("invalid-action-steps")? {
             action(step, out)?;
         }
     }
@@ -82,8 +96,8 @@ pub(crate) fn actions(text: &str) -> Result<BTreeSet<String>, &'static str> {
     let doc = parse(text)?;
     let mut out = BTreeSet::new();
     if let Some(jobs) = doc.get("jobs") {
-        for (key, job) in jobs.as_mapping().ok_or("invalid-action-jobs")? {
-            if key.as_str() == Some("<<") {
+        for (key, job) in jobs.as_object().ok_or("invalid-action-jobs")? {
+            if key == "<<" {
                 return Err("unsupported-action-merge");
             }
             action(job, &mut out)?;
@@ -98,9 +112,15 @@ pub(crate) fn actions(text: &str) -> Result<BTreeSet<String>, &'static str> {
 mod tests {
     use super::*;
     #[test]
+    fn rejects_duplicate_keys() {
+        assert!(compose("services: {app: {image: first, image: second}}").is_err());
+        assert!(actions("jobs: {build: {}, build: {}}").is_err());
+    }
+
+    #[test]
     fn compose_normalizes_tags_and_preserves_registry_port() -> Result<(), &'static str> {
         let got = compose(
-            "services:\n  app:\n    image: localhost:5000/team/app:1\n  db:\n    image: postgres@sha256:abc\n",
+            "version: \"3.8\"\nservices:\n  app:\n    image: localhost:5000/team/app:1\n  db:\n    image: postgres@sha256:abc\n",
         )?;
         assert_eq!(
             got,
@@ -113,7 +133,7 @@ mod tests {
     #[test]
     fn actions_supports_jobs_steps_and_composite_runs() -> Result<(), &'static str> {
         let got = actions(
-            "jobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n  reuse:\n    uses: owner/repo/.github/workflows/build.yml@main\nruns:\n  steps:\n    - uses: actions/setup-node@v4",
+            "on: [push, pull_request]\njobs:\n  build:\n    steps:\n      - uses: actions/checkout@v4\n  reuse:\n    uses: owner/repo/.github/workflows/build.yml@main\nruns:\n  steps:\n    - uses: actions/setup-node@v4",
         )?;
         assert_eq!(
             got,

@@ -17,6 +17,7 @@ use std::{
 use walkdir::WalkDir;
 
 const MAX_FILE: usize = 8 * 1024 * 1024;
+const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 const MAX_TREE: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
 pub(crate) const MAX_RECORD: usize = 1024 * 1024;
@@ -271,18 +272,31 @@ fn manifest(bytes: &[u8]) -> Result<String, Error> {
         }
         header.push_str(line);
         header.push('\n');
-        if header.len() > 16 * 1024 {
+        if header.len() > MAX_FRONTMATTER_BYTES {
             return Err(invalid("frontmatter limit"));
         }
     }
     if !closed || header.contains(['&', '*', '!', '%']) {
         return Err(invalid("unsupported skill frontmatter"));
     }
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&header).map_err(|_| invalid("invalid skill frontmatter"))?;
+    let doc: serde_json::Value = serde_saphyr::from_str_with_options(
+        &header,
+        serde_saphyr::options! {
+            duplicate_keys: serde_saphyr::options::DuplicateKeyPolicy::Error,
+            merge_keys: serde_saphyr::options::MergeKeyPolicy::AsOrdinary,
+            budget: serde_saphyr::budget! {
+                max_documents: 1,
+                max_depth: 64,
+                max_anchors: 0,
+                max_aliases: 0,
+                max_total_scalar_bytes: MAX_FRONTMATTER_BYTES,
+            },
+        },
+    )
+    .map_err(|_| invalid("invalid skill frontmatter"))?;
     let name = doc
         .get("name")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(serde_json::Value::as_str)
         .ok_or_else(|| invalid("skill name missing"))?;
     if name.is_empty()
         || name.len() > 64
@@ -297,7 +311,7 @@ fn manifest(bytes: &[u8]) -> Result<String, Error> {
     }
     let description = doc
         .get("description")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(serde_json::Value::as_str)
         .ok_or_else(|| invalid("skill description missing"))?;
     if description.trim().is_empty()
         || description.chars().count() > 1024
