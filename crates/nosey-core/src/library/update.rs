@@ -24,6 +24,7 @@ impl Library {
     ///
     /// Rejects invalid content, absent objects and skill name changes.
     pub fn preview_update(&self, id: &str, source: &Path) -> Result<UpdatePreview, Error> {
+        super::validate_fixture_id(id)?;
         let current = self.get(id)?;
         let source = self.fixture_source(source)?;
         let (tree_sha256, name) = tree(&source, None)?;
@@ -34,6 +35,7 @@ impl Library {
                 path: source,
                 tree_sha256,
             },
+            ..current.clone()
         };
         self.update_plan(current, replacement)
     }

@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Central active-copy library, inspired by Kitter src/library.rs.
-//! Explicitly local fixtures only; no catalog trust is inferred from a path.
+//! Local fixtures and verified catalog artifacts.
 //!
 //! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 
+mod acquisition;
 mod cleanup;
 pub(crate) mod manifest;
+pub use acquisition::AcquisitionPreview;
+pub use nosey_registry::BundleSource;
 mod update;
 pub use cleanup::{CleanupReport, RemovePreview};
 pub use update::UpdatePreview;
 
 use manifest::manifest;
+pub(crate) use manifest::skill_name;
 
 use crate::library_io::{directory, invalid, read, relative};
 use crate::{Error, State};
@@ -34,26 +38,76 @@ const FIXTURE_PREFIX: &str = "urn:nosey:fixture:";
 /// Owner-only directory mode required for library storage.
 const PRIVATE_MODE: u32 = 0o700;
 
-/// Explicitly local, unverified fixture source. Never a trusted catalog entry.
+/// Local integrity metadata shared by fixtures and catalog artifacts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LocalSource {
-    /// Directory selected by the caller.
+    /// Directory selected for a fixture, empty for remote content.
     pub path: PathBuf,
     /// Local content fingerprint; not a publisher signature or SDK digest.
     pub tree_sha256: String,
+}
+
+/// Origin of a library skill.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Acquisition {
+    /// Explicitly selected local content.
+    #[default]
+    Fixture,
+    /// An exact Git revision of a skill subtree.
+    Git {
+        /// Approved repository URL.
+        repo: String,
+        /// Skill subtree relative to the repository root.
+        path: PathBuf,
+        /// Exact commit object ID.
+        revision: String,
+    },
+    /// A digest-verified catalog representation.
+    Bundle {
+        /// Representation URL.
+        url: String,
+        /// SDK representation media type.
+        media_type: String,
+        /// Declared digest of the fetched bytes.
+        digest: String,
+    },
+}
+
+/// Last known source availability.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Availability {
+    /// Source was available at acquisition.
+    #[default]
+    Available,
+    /// Source has become unavailable.
+    Unavailable,
 }
 
 /// Metadata for one active downloaded/local copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SkillRecord {
-    /// Fixture-only canonical identifier.
+    /// Canonical artifact identifier.
     pub id: String,
     /// Validated Agent Skill manifest name.
     pub name: String,
-    /// Local source provenance.
+    /// Local path and integrity metadata.
     pub source: LocalSource,
+    /// Selected registry identity for catalog acquisitions.
+    #[serde(default)]
+    pub registry: Option<String>,
+    /// How the active copy was acquired.
+    #[serde(default)]
+    pub acquisition: Acquisition,
+    /// Catalog release version when supplied.
+    #[serde(default)]
+    pub revision: Option<String>,
+    /// Last known availability of the source.
+    #[serde(default)]
+    pub availability: Availability,
 }
 
 /// Private central library. All cooperating operations hold its exclusive lock.
@@ -67,7 +121,7 @@ pub(crate) fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-pub(crate) fn validate_id(id: &str) -> Result<(), Error> {
+pub(crate) fn validate_fixture_id(id: &str) -> Result<(), Error> {
     let Some(suffix) = id.strip_prefix(FIXTURE_PREFIX) else {
         return Err(invalid("only fixture identifiers are accepted"));
     };
@@ -78,6 +132,21 @@ pub(crate) fn validate_id(id: &str) -> Result<(), Error> {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
     {
         return Err(invalid("invalid fixture identifier"));
+    }
+    Ok(())
+}
+
+fn validate_artifact_id(id: &str) -> Result<(), Error> {
+    const MAX_ARTIFACT_ID: usize = 4096;
+    if id.starts_with(FIXTURE_PREFIX) {
+        return validate_fixture_id(id);
+    }
+    if id.is_empty()
+        || id.len() > MAX_ARTIFACT_ID
+        || id.chars().any(char::is_whitespace)
+        || id.chars().any(char::is_control)
+    {
+        return Err(invalid("invalid catalog identifier"));
     }
     Ok(())
 }
@@ -200,7 +269,7 @@ impl Library {
     ///
     /// Rejects missing, malformed, modified or mismatched library content.
     pub fn get(&self, id: &str) -> Result<SkillRecord, Error> {
-        validate_id(id)?;
+        validate_artifact_id(id)?;
         let dir = self.object_dir(id);
         let record = verified_record(&dir)?;
         if record.id != id {
@@ -252,7 +321,7 @@ impl Library {
         id: &str,
         source: &Path,
     ) -> Result<(tempfile::TempDir, SkillRecord), Error> {
-        validate_id(id)?;
+        validate_fixture_id(id)?;
         let source = self.fixture_source(source)?;
         let objects = self.root.join("objects");
         // Published objects stay as private as the library root they live in.
@@ -269,6 +338,10 @@ impl Library {
                 path: source,
                 tree_sha256: digest,
             },
+            registry: None,
+            acquisition: Acquisition::Fixture,
+            revision: None,
+            availability: Availability::Available,
         };
         atomic_json(
             stage.path(),
@@ -394,39 +467,4 @@ fn verified_record(dir: &Path) -> Result<SkillRecord, Error> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn imports_once_and_rejects_mutation_or_symlink() -> Result<(), Box<dyn std::error::Error>> {
-        let central = tempfile::Builder::new()
-            .permissions(fs::Permissions::from_mode(0o700))
-            .tempdir()?;
-        let source = tempfile::tempdir()?;
-        fs::write(
-            source.path().join("SKILL.md"),
-            "---\nname: demo\ndescription: Fixture\n---\nDo not execute.\n",
-        )?;
-        let library = Library::open(&State::default(), central.path())?;
-        let first = library.import_fixture("urn:nosey:fixture:demo", source.path())?;
-        assert_eq!(library.import_fixture(&first.id, source.path())?, first);
-        assert_eq!(
-            fs::metadata(library.object_dir(&first.id))?
-                .permissions()
-                .mode()
-                & 0o777,
-            PRIVATE_MODE
-        );
-        fs::write(source.path().join("script.sh"), "new")?;
-        assert!(library.import_fixture(&first.id, source.path()).is_err());
-        std::os::unix::fs::symlink("script.sh", source.path().join("link"))?;
-        assert!(
-            library
-                .import_fixture("urn:nosey:fixture:other", source.path())
-                .is_err()
-        );
-        assert_eq!(library.get(&first.id)?, first);
-        assert!(Library::open(&State::default(), central.path()).is_err());
-        Ok(())
-    }
-}
+mod tests;

@@ -18,7 +18,8 @@ use std::{
 };
 use url::{Host, Url};
 
-const MAX_BODY: usize = 10 * 1024 * 1024;
+/// Maximum response body size in bytes.
+pub const MAX_BODY: usize = 10 * 1024 * 1024;
 const TOTAL_BODY: usize = 32 * 1024 * 1024;
 const MAX_REQUESTS: usize = 32;
 const MAX_REDIRECTS: usize = 5;

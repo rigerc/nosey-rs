@@ -47,17 +47,7 @@ pub fn manifest(bytes: &[u8]) -> Result<String, Error> {
         .get("name")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| invalid("skill name missing"))?;
-    if name.is_empty()
-        || name.len() > 64
-        || name.starts_with('-')
-        || name.ends_with('-')
-        || name.contains("--")
-        || !name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-    {
-        return Err(invalid("invalid skill name"));
-    }
+    skill_name(name)?;
     let description = doc
         .get("description")
         .and_then(serde_json::Value::as_str)
@@ -69,6 +59,22 @@ pub fn manifest(bytes: &[u8]) -> Result<String, Error> {
         return Err(invalid("invalid skill description"));
     }
     Ok(name.into())
+}
+
+/// Validate the manifest name used as an install path component.
+pub fn skill_name(name: &str) -> Result<(), Error> {
+    if name.is_empty()
+        || name.len() > 64
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || name.contains("--")
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err(invalid("invalid skill name"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
