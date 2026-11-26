@@ -17,6 +17,7 @@ use nosey_registry::Fetch;
 mod acquisition;
 mod preview;
 use acquisition::{Acquisitions, HttpsFetch, acquisitions};
+mod apply_sync;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -153,6 +154,8 @@ pub struct ChangePlan {
     pub fingerprint: String,
     #[serde(skip)]
     requests: Vec<ChangeRequest>,
+    #[serde(skip)]
+    pub(crate) sync: Option<crate::sync::Sync>,
 }
 
 impl ChangePlan {
@@ -288,6 +291,7 @@ impl Library {
             changes,
             fingerprint,
             requests: requests.to_vec(),
+            sync: None,
         })
     }
 
@@ -316,6 +320,9 @@ impl Library {
         approved: &ChangePlan,
         fetch: &impl Fetch,
     ) -> Result<Vec<ChangeResult>, Error> {
+        if let Some(kind) = approved.sync {
+            return self.apply_sync(state, approved, kind);
+        }
         let fresh = self.plan(state, &approved.requests)?;
         if &fresh != approved {
             return Err(invalid("stale change plan; review again"));

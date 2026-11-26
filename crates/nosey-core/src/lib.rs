@@ -27,9 +27,13 @@ mod library_io;
 /// Shared batch change planning with per-item outcomes.
 #[cfg(target_os = "linux")]
 pub mod plan;
+/// Linked preset definitions and applications.
+pub mod presets;
 mod project_activity;
 /// Native read-only project target discovery.
 pub mod skill_discovery;
+#[cfg(target_os = "linux")]
+mod sync;
 /// Agent target configuration and install scopes.
 pub mod targets;
 pub use freshness::{Freshness, SavedEvaluation};
@@ -69,6 +73,10 @@ pub struct State {
     pub project_activity: BTreeMap<PathBuf, u64>,
     #[serde(default)]
     targets: targets::TargetConfig,
+    #[serde(default)]
+    presets: BTreeMap<String, presets::Preset>,
+    #[serde(default)]
+    preset_applications: BTreeSet<presets::PresetApplication>,
 }
 
 impl State {
@@ -93,6 +101,7 @@ impl State {
         }
         let state: Self = serde_json::from_slice(&data)?;
         state.targets.validate()?;
+        state.validate_presets()?;
         Ok(state)
     }
     /// Persist atomically to an existing central directory outside all registered projects.

@@ -5,7 +5,7 @@ use clap::Subcommand;
 use nosey_core::{
     State,
     library::Library,
-    plan::{ChangeOutcome, ChangeRequest, load_requests},
+    plan::{ChangeOutcome, ChangePlan, ChangeRequest, load_requests},
 };
 use std::{
     collections::BTreeSet,
@@ -84,26 +84,41 @@ pub fn run(command: Command, state: &State) -> Result<()> {
             let library = Library::open(state, &library)?;
             let requests = select(&library, state, &requests, &only)?;
             let plan = library.plan(state, &requests)?;
-            ensure!(
-                plan.fingerprint == approve,
-                "stale approval; review the plan again"
-            );
-            let results = library.apply_plan(state, &plan)?;
-            println!("{}", serde_json::to_string_pretty(&results)?);
-            let unresolved = results
-                .iter()
-                .filter(|r| {
-                    matches!(
-                        r.outcome,
-                        ChangeOutcome::Stale | ChangeOutcome::Failed { .. }
-                    )
-                })
-                .count();
-            ensure!(
-                unresolved == 0,
-                "{unresolved} change(s) stale or failed; plan again to retry"
-            );
+            review_or_apply(&library, state, &plan, Some(&approve))?;
         }
     }
+    Ok(())
+}
+
+/// Print a plan, or verify its approval and print the results.
+pub fn review_or_apply(
+    library: &Library,
+    state: &State,
+    plan: &ChangePlan,
+    approve: Option<&str>,
+) -> Result<()> {
+    let Some(approve) = approve else {
+        println!("{}", serde_json::to_string_pretty(plan)?);
+        return Ok(());
+    };
+    ensure!(
+        plan.fingerprint == approve,
+        "stale approval; review the plan again"
+    );
+    let results = library.apply_plan(state, plan)?;
+    println!("{}", serde_json::to_string_pretty(&results)?);
+    let unresolved = results
+        .iter()
+        .filter(|result| {
+            matches!(
+                result.outcome,
+                ChangeOutcome::Stale | ChangeOutcome::Failed { .. }
+            )
+        })
+        .count();
+    ensure!(
+        unresolved == 0,
+        "{unresolved} change(s) stale or failed; plan again to retry"
+    );
     Ok(())
 }

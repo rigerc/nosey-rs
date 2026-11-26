@@ -31,7 +31,7 @@ impl AgentTarget {
 }
 
 /// The root against which configured targets are resolved.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum InstallScope {
     /// Global agent locations.

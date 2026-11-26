@@ -4,6 +4,8 @@
 //! Unlike Kitter, no occupied path is replaced, and no unmanaged link adopted.
 //! Pending journal records survive an interrupted apply.
 
+use crate::presets::MAX_PRESET_ID;
+
 mod audit;
 mod maintenance;
 pub use audit::{JournalConnection, LinkAudit};
@@ -93,9 +95,6 @@ pub struct InstallPreview {
     /// Fingerprint of complete preview state, supplied for explicit apply.
     pub fingerprint: String,
 }
-
-/// Longest accepted preset identity in an install reason.
-const MAX_PRESET_ID: usize = 128;
 
 fn name(path: &Path) -> Result<&Path, Error> {
     path.file_name()
@@ -338,6 +337,16 @@ impl Library {
         bundle: Option<&crate::library::BundleSource>,
     ) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
+        self.apply_install_locked(state, approved, bundle)
+    }
+
+    /// Install while the caller already holds the library mutation lock.
+    pub(crate) fn apply_install_locked(
+        &self,
+        state: &State,
+        approved: &InstallPreview,
+        bundle: Option<&crate::library::BundleSource>,
+    ) -> Result<Status, Error> {
         let skill = match bundle {
             Some(source) => self
                 .preview_acquire(source)?

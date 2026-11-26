@@ -374,3 +374,6 @@ fn global_plan_preserves_unmanaged_links_and_settings_preserve_managed_links() -
     assert!(fs::symlink_metadata(&preexisting).is_err());
     Ok(())
 }
+
+#[path = "change_plan/sync.rs"]
+mod sync;
