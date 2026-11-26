@@ -171,14 +171,31 @@ The batch action also accepts a Git source:
  "path": "skills/sample", "revision": "0123456789012345678901234567890123456789"}}
 ```
 
-Git 2.42 or newer is required for HTTPS retrieval. Nosey uses a private bare
-repository, disables hooks and redirects, and verifies the fetched commit
-before reading the selected subtree. Only regular files and directories are
-materialized and they pass the same limits and manifest validation as bundle
-content. Git commands share a 60-second deadline and bounded captured output.
-An intact matching active copy is reusable offline. Credential helpers, SSH
-and Git updates are outside this slice. A shallow fetch may still transfer
-objects outside the selected subtree.
+Git 2.37 or newer is required for HTTPS retrieval. Git 2.37 introduced
+[`http.curloptResolve`](https://github.com/git/git/blob/master/Documentation/RelNotes/2.37.0.adoc),
+which pins the public addresses resolved for the initial and on-demand fetches.
+Nosey uses a private bare repository, disables hooks and redirects, and
+verifies the fetched commit before reading the selected subtree.
+
+The initial shallow fetch requests `blob:none`. Git fetches missing blobs
+on demand as Nosey reads files under the selected subtree. Servers without
+filter support may send an unfiltered pack under the same 128 MiB staging
+limit. The watchdog checks staged file sizes every 10 ms and after Git exits.
+Writes between checks can temporarily exceed the limit. All Git commands
+share a 60-second deadline and bounded captured output. Only regular files
+and directories are materialized. They pass the same limits and manifest
+validation as bundle content. An intact matching active copy is reusable
+offline.
+
+To run the ignored live test, supply a public HTTPS repository, a full commit
+SHA and a subtree containing a valid `SKILL.md`. Use `.` for a root skill.
+
+```sh
+NOSEY_TEST_GIT_URL='<public HTTPS repository>' \
+NOSEY_TEST_GIT_REVISION='<full commit SHA>' \
+NOSEY_TEST_GIT_PATH='<skill subtree>' \
+cargo test -p nosey-core live_pinned_https_acquisition -- --ignored
+```
 
 ## Limitations
 

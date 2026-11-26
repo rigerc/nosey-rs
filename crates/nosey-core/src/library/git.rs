@@ -43,7 +43,9 @@ pub struct GitSource {
 enum GitProtocol {
     Https,
     #[cfg(test)]
-    File,
+    File {
+        staging_limit: u64,
+    },
 }
 
 /// Git acquisition source and its observed active copy.
@@ -93,7 +95,7 @@ impl GitSource {
                 nosey_registry::validate_url(&url).map_err(|e| invalid(&e))?;
             }
             #[cfg(test)]
-            GitProtocol::File => {
+            GitProtocol::File { .. } => {
                 if !self.repo.starts_with("file:///") {
                     return Err(invalid("test Git repository requires an absolute file URL"));
                 }
@@ -214,7 +216,7 @@ impl Library {
 }
 
 impl Git<'_> {
-    fn extract(&self, source: &GitSource, root: &Path) -> Result<(), Error> {
+    fn extract(&mut self, source: &GitSource, root: &Path) -> Result<(), Error> {
         self.run(
             &["init", "--bare", "--template=", "--object-format=sha1"],
             MAX_METADATA,
@@ -224,11 +226,22 @@ impl Git<'_> {
                 .map_err(|_| invalid("invalid Git repository URL"))?
                 .to_string(),
             #[cfg(test)]
-            GitProtocol::File => source.repo.clone(),
+            GitProtocol::File { .. } => source.repo.clone(),
         };
-        self.run(&["remote", "add", "origin", &repo], MAX_METADATA)?;
+        self.prepare_remote(&repo)?;
         let revision = source.revision.to_ascii_lowercase();
-        self.fetch(&repo, &revision)?;
+        self.run(
+            &[
+                "fetch",
+                "--depth=1",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--filter=blob:none",
+                "origin",
+                &revision,
+            ],
+            0,
+        )?;
         let actual = self.run(
             &["rev-parse", "--verify", "FETCH_HEAD^{commit}"],
             SHA_LEN + 1,

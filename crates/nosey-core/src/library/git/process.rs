@@ -1,6 +1,6 @@
 //! Isolated Git subprocesses sharing one acquisition deadline.
 
-use super::GitProtocol;
+use super::{GitProtocol, MAX_METADATA};
 use crate::{Error, library_io::invalid};
 use rustix::{
     fs::{OFlags, fcntl_setfl},
@@ -21,70 +21,52 @@ const DEADLINE: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const BUFFER_SIZE: usize = 8192;
 const VERSION_LIMIT: usize = 256;
-const MINIMUM_VERSION: (u32, u32) = (2, 42);
+const MINIMUM_VERSION: (u32, u32) = (2, 37);
+const STAGING_LIMIT: u64 = 128 * 1024 * 1024;
 
 pub(super) struct Git<'a> {
     repo: &'a Path,
     home: PathBuf,
     protocol: GitProtocol,
     deadline: Instant,
+    pin: Option<String>,
+    staging_limit: u64,
 }
 
 impl<'a> Git<'a> {
     pub(super) fn new(repo: &'a Path, protocol: GitProtocol) -> Result<Self, Error> {
         let home = repo.join("home");
         fs::create_dir(&home)?;
-        Ok(Self {
+        let git = Self {
             repo,
             home,
             protocol,
             deadline: Instant::now() + DEADLINE,
-        })
+            pin: None,
+            staging_limit: match protocol {
+                GitProtocol::Https => STAGING_LIMIT,
+                #[cfg(test)]
+                GitProtocol::File { staging_limit } => staging_limit,
+            },
+        };
+        if matches!(protocol, GitProtocol::Https) {
+            check_version(&git.run(&["--version"], VERSION_LIMIT)?)?;
+        }
+        Ok(git)
     }
 
     pub(super) const fn protocol(&self) -> GitProtocol {
         self.protocol
     }
 
-    pub(super) fn fetch(&self, url: &str, revision: &str) -> Result<(), Error> {
-        let fetch = [
-            "fetch",
-            "--depth=1",
-            "--no-tags",
-            "--no-recurse-submodules",
-            "origin",
-            revision,
-        ];
-        match self.protocol {
-            GitProtocol::Https => {
-                let version = self.run(&["--version"], VERSION_LIMIT)?;
-                let version =
-                    std::str::from_utf8(&version).map_err(|_| invalid("invalid Git version"))?;
-                let mut parts = version
-                    .trim()
-                    .strip_prefix("git version ")
-                    .unwrap_or_default()
-                    .split('.');
-                let major = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-                let minor = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
-                if (major, minor) < MINIMUM_VERSION {
-                    return Err(invalid("HTTPS acquisition requires Git 2.42 or newer"));
-                }
-                let repo =
-                    url::Url::parse(url).map_err(|_| invalid("invalid Git repository URL"))?;
-                let pin = dns_pin(repo, self.deadline)?;
-                let mut args = Vec::new();
-                if let Some(pin) = pin.as_deref() {
-                    args.extend(["-c", pin]);
-                }
-                args.extend(fetch);
-                self.run(&args, 0)?;
-            }
-            #[cfg(test)]
-            GitProtocol::File => {
-                self.run(&fetch, 0)?;
-            }
+    /// Configure the promisor remote and pin HTTPS for initial and lazy fetches.
+    pub(super) fn prepare_remote(&mut self, url: &str) -> Result<(), Error> {
+        if matches!(self.protocol, GitProtocol::Https) {
+            let repo = url::Url::parse(url).map_err(|_| invalid("invalid Git repository URL"))?;
+            self.pin = dns_pin(repo, self.deadline)?;
         }
+        self.run(&["remote", "add", "origin", url], MAX_METADATA)?;
+        self.run(&["config", "remote.origin.promisor", "true"], 0)?;
         Ok(())
     }
 
@@ -95,9 +77,10 @@ impl<'a> Git<'a> {
         let (protocol, file) = match self.protocol {
             GitProtocol::Https => ("https", "protocol.file.allow=never"),
             #[cfg(test)]
-            GitProtocol::File => ("file", "protocol.file.allow=always"),
+            GitProtocol::File { .. } => ("file", "protocol.file.allow=always"),
         };
-        let mut child = Command::new("git")
+        let mut command = Command::new("git");
+        let mut child = command
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", &self.home)
@@ -127,6 +110,7 @@ impl<'a> Git<'a> {
                 "-c",
                 "gc.auto=0",
             ])
+            .args(self.pin.iter().flat_map(|pin| ["-c", pin.as_str()]))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -151,13 +135,19 @@ impl<'a> Git<'a> {
         fcntl_setfl(&stdout, OFlags::NONBLOCK).map_err(io::Error::from)?;
         let mut bytes = Vec::new();
         let mut buffer = [0; BUFFER_SIZE];
+        let mut next_size_check = Instant::now();
         loop {
             if Instant::now() >= self.deadline {
                 return Err(invalid("Git acquisition timed out"));
             }
+            if Instant::now() >= next_size_check {
+                self.check_staging_size()?;
+                next_size_check = Instant::now() + POLL_INTERVAL;
+            }
             match stdout.read(&mut buffer) {
                 Ok(0) => {
                     if let Some(status) = child.try_wait()? {
+                        self.check_staging_size()?;
                         return Ok((status, bytes));
                     }
                     thread::sleep(POLL_INTERVAL);
@@ -174,6 +164,63 @@ impl<'a> Git<'a> {
             }
         }
     }
+
+    fn check_staging_size(&self) -> Result<(), Error> {
+        let mut remaining = self.staging_limit;
+        for entry in walkdir::WalkDir::new(self.repo).follow_links(false) {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error)
+                    if error
+                        .io_error()
+                        .is_some_and(|io| io.kind() == io::ErrorKind::NotFound) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(io::Error::other(error).into()),
+            };
+            if entry.file_type().is_file() {
+                // Git may rename a temporary pack between enumeration and stat.
+                let size = match entry.metadata() {
+                    Ok(metadata) => metadata.len(),
+                    Err(error)
+                        if error
+                            .io_error()
+                            .is_some_and(|io| io.kind() == io::ErrorKind::NotFound) =>
+                    {
+                        continue;
+                    }
+                    Err(error) => return Err(io::Error::other(error).into()),
+                };
+                remaining = remaining.checked_sub(size).ok_or_else(|| {
+                    invalid(&format!(
+                        "Git staging size limit ({} bytes)",
+                        self.staging_limit
+                    ))
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Validate the version output from the isolated Git executable.
+pub(super) fn check_version(output: &[u8]) -> Result<(), Error> {
+    let output = String::from_utf8_lossy(output);
+    let output = output.trim();
+    let found = output.strip_prefix("git version ").unwrap_or(output);
+    let mut parts = found.split('.');
+    let version = parts
+        .next()
+        .and_then(|major| major.parse().ok())
+        .zip(parts.next().and_then(|minor| minor.parse().ok()));
+    if version.is_some_and(|version| version >= MINIMUM_VERSION) {
+        return Ok(());
+    }
+    let (major, minor) = MINIMUM_VERSION;
+    Err(invalid(&format!(
+        "HTTPS acquisition requires Git {major}.{minor} or newer (found {found:?})"
+    )))
 }
 
 fn dns_pin(repo: url::Url, deadline: Instant) -> Result<Option<String>, Error> {
