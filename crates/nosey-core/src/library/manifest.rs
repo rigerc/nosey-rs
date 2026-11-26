@@ -1,7 +1,6 @@
 //! Restricted Agent Skill frontmatter validation for imported fixtures.
 
 use crate::{Error, library_io::invalid};
-use serde_saphyr::granit_parser::{Scanner, StrInput, TokenType};
 
 const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 
@@ -27,20 +26,7 @@ pub(super) fn manifest(bytes: &[u8]) -> Result<String, Error> {
     if !closed {
         return Err(invalid("unsupported skill frontmatter"));
     }
-    // The Serde decoder accepts standard explicit tags and YAML directives.
-    // Inspect tokens first so even syntax on ignored fields is rejected.
-    for token in Scanner::new(StrInput::new(&header)) {
-        let token = token.map_err(|_| invalid("invalid skill frontmatter"))?;
-        if matches!(
-            token.token_type(),
-            TokenType::Tag(..)
-                | TokenType::VersionDirective(..)
-                | TokenType::TagDirective(..)
-                | TokenType::ReservedDirective(..)
-        ) {
-            return Err(invalid("unsupported skill frontmatter"));
-        }
-    }
+    nosey_registry::validate_yaml_tokens(&header).map_err(|error| invalid(&error.to_string()))?;
     let doc: serde_json::Value = serde_saphyr::from_str_with_options(
         &header,
         serde_saphyr::options! {

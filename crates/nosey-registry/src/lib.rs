@@ -1,6 +1,8 @@
 //! AI Catalog adapter and typed Nosey intelligence; no alternative wire model.
 #![forbid(unsafe_code)]
 mod authoring;
+mod yaml;
+pub use yaml::validate_yaml_tokens;
 /// Read-only in-memory search over catalog entities.
 pub mod explore;
 mod index;
