@@ -150,6 +150,36 @@ impl Library {
     }
 }
 
+/// Find unmanaged symlinks with exact, verified library provenance.
+pub(crate) fn unmanaged_library_links(
+    library: &Library,
+    target: &Path,
+    owned: &BTreeSet<PathBuf>,
+    sources: &BTreeMap<PathBuf, &String>,
+) -> Result<BTreeSet<String>, Error> {
+    let observations = entries(target, owned)?;
+    let mut matches = BTreeSet::new();
+    for (_, entry) in observations {
+        if !matches!(entry.kind, EntryKind::Symlink) {
+            continue;
+        }
+        let parent = directory(target)?;
+        let leaf = entry
+            .path
+            .file_name()
+            .ok_or_else(|| invalid("missing link name"))?;
+        let destination =
+            rustix::fs::readlinkat(&parent, leaf, Vec::new()).map_err(io::Error::from)?;
+        let source = Path::new(std::ffi::OsStr::from_bytes(destination.to_bytes()));
+        if let Some(&id) = sources.get(source)
+            && library.get(id).is_ok()
+        {
+            matches.insert(id.clone());
+        }
+    }
+    Ok(matches)
+}
+
 fn entries(
     target: &Path,
     owned: &BTreeSet<PathBuf>,

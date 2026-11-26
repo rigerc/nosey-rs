@@ -9,6 +9,7 @@ mod cleanup;
 mod git;
 pub use git::{GitAcquisitionPreview, GitSource};
 pub(crate) mod manifest;
+mod tokens;
 pub use acquisition::AcquisitionPreview;
 pub use nosey_registry::BundleSource;
 mod remote_update;

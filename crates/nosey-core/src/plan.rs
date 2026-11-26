@@ -13,15 +13,18 @@ use crate::{
     library_io::invalid,
     targets::InstallScope,
 };
-use nosey_registry::Fetch;
+use nosey_registry::CatalogIndex;
+mod advisory;
+mod apply;
+pub use advisory::Warning;
 mod acquisition;
 pub use acquisition::{AcquisitionReview, AcquisitionSource};
 mod preview;
-use acquisition::{Acquisitions, HttpsFetch, acquisitions};
+use acquisition::{Acquisitions, acquisitions};
 mod apply_sync;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -149,6 +152,11 @@ pub struct PlannedChange {
     /// Why this item will not be executed, if blocked.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocker: Option<String>,
+    /// Advisory dependencies and conflicts.
+    pub warnings: Vec<Warning>,
+    /// Estimated tokens in the locally available skill body.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_tokens: Option<usize>,
     /// Fingerprint of this item's observed state.
     pub fingerprint: String,
 }
@@ -272,6 +280,19 @@ impl Library {
     /// Fails only for too many requests or unserializable state; individual
     /// preview failures are reported as blockers on their item.
     pub fn plan(&self, state: &State, requests: &[ChangeRequest]) -> Result<ChangePlan, Error> {
+        self.plan_with_catalog(state, requests, None)
+    }
+
+    /// Preview a batch with advisory metadata from an optional catalog.
+    ///
+    /// # Errors
+    /// Rejects oversized batches or unserializable plan state.
+    pub fn plan_with_catalog(
+        &self,
+        state: &State,
+        requests: &[ChangeRequest],
+        catalog: Option<&CatalogIndex>,
+    ) -> Result<ChangePlan, Error> {
         if requests.len() > MAX_PLAN_CHANGES {
             return Err(invalid("too many changes in one plan"));
         }
@@ -289,10 +310,21 @@ impl Library {
                 }
             }
         }
+        if let Some(catalog) = catalog {
+            self.add_advisories(state, &mut changes, catalog);
+        }
         let fingerprint = hash(&serde_json::to_vec(
             &changes
                 .iter()
-                .map(|c| (&c.id, &c.fingerprint, &c.blocker))
+                .map(|c| {
+                    (
+                        &c.id,
+                        &c.fingerprint,
+                        &c.blocker,
+                        &c.warnings,
+                        c.estimated_tokens,
+                    )
+                })
                 .collect::<Vec<_>>(),
         )?);
         Ok(ChangePlan {
@@ -301,61 +333,6 @@ impl Library {
             requests: requests.to_vec(),
             sync: None,
         })
-    }
-
-    /// Apply an approved plan. The plan must still match a fresh review; each
-    /// eligible item is then revalidated and applied independently.
-    ///
-    /// # Errors
-    ///
-    /// Rejects a plan that no longer matches current state before any mutation.
-    /// Individual item failures are reported in the results, not as errors.
-    pub fn apply_plan(
-        &self,
-        state: &State,
-        approved: &ChangePlan,
-    ) -> Result<Vec<ChangeResult>, Error> {
-        self.apply_plan_with_fetch(state, approved, &HttpsFetch)
-    }
-
-    /// Apply an approved plan using the supplied byte transport for acquisitions.
-    ///
-    /// # Errors
-    /// Rejects a stale plan before mutation. Individual failures are reported per item.
-    pub fn apply_plan_with_fetch(
-        &self,
-        state: &State,
-        approved: &ChangePlan,
-        fetch: &impl Fetch,
-    ) -> Result<Vec<ChangeResult>, Error> {
-        if let Some(kind) = approved.sync {
-            return self.apply_sync(state, approved, kind);
-        }
-        let fresh = self.plan(state, &approved.requests)?;
-        if &fresh != approved {
-            return Err(invalid("stale change plan; review again"));
-        }
-        let mut order: Vec<usize> = (0..fresh.changes.len()).collect();
-        order.sort_by_key(|&i| fresh.changes[i].request.apply_rank());
-        let mut outcomes = vec![None; fresh.changes.len()];
-        for i in order {
-            let change = &fresh.changes[i];
-            outcomes[i] = Some(change.blocker.as_ref().map_or_else(
-                || self.apply_one(state, change, fetch),
-                |reason| ChangeOutcome::Blocked {
-                    reason: reason.clone(),
-                },
-            ));
-        }
-        Ok(fresh
-            .changes
-            .iter()
-            .zip(outcomes)
-            .map(|(change, outcome)| ChangeResult {
-                id: change.id.clone(),
-                outcome: outcome.unwrap_or(ChangeOutcome::Stale),
-            })
-            .collect())
     }
 
     fn plan_one(
@@ -380,69 +357,20 @@ impl Library {
             Some(ChangeDetail::Remove(p)) => p.fingerprint.clone(),
             None => hash(&serde_json::to_vec(&("blocked", &id, &blocker))?),
         };
+        let estimated_tokens = match &detail {
+            Some(ChangeDetail::Install(install)) => {
+                self.estimate_skill_tokens(&install.artifact).ok()
+            }
+            _ => None,
+        };
         Ok(PlannedChange {
             id,
             request: request.clone(),
             detail,
             blocker,
+            warnings: Vec::new(),
+            estimated_tokens,
             fingerprint,
         })
-    }
-
-    fn apply_one(
-        &self,
-        state: &State,
-        reviewed: &PlannedChange,
-        fetch: &impl Fetch,
-    ) -> ChangeOutcome {
-        if let Some(ChangeDetail::PendingInstall { install, source }) = &reviewed.detail {
-            // The install was reviewed against the pinned source. apply_install
-            // requires the acquisition to have succeeded and revalidates the destination.
-            return match self.apply_install(state, install, Some(source)) {
-                Ok(_) => ChangeOutcome::Applied,
-                Err(error) => ChangeOutcome::Failed {
-                    error: error.to_string(),
-                },
-            };
-        }
-        // Earlier items in this plan may have changed the observed state.
-        let current = match self.plan_one(
-            state,
-            reviewed.id.clone(),
-            &reviewed.request,
-            &BTreeMap::new(),
-        ) {
-            Ok(current) if current.fingerprint == reviewed.fingerprint => current,
-            Ok(_) => return ChangeOutcome::Stale,
-            Err(error) => {
-                return ChangeOutcome::Failed {
-                    error: error.to_string(),
-                };
-            }
-        };
-        let applied = match &current.detail {
-            Some(ChangeDetail::Install(p)) => self.apply(state, p).map(drop),
-            Some(ChangeDetail::Unlink(p)) => self.apply_unlink(p).map(drop),
-            Some(ChangeDetail::Update(p)) => self.apply_update(p).map(drop),
-            Some(ChangeDetail::RemoteUpdate(p)) => self.apply_remote_update(p, fetch).map(drop),
-            Some(ChangeDetail::Remove(p)) => self.apply_remove_unused(state, p),
-            Some(ChangeDetail::Acquire(p)) => {
-                let ChangeRequest::AcquireLibrarySkill { install_name, .. } = &reviewed.request
-                else {
-                    return ChangeOutcome::Stale;
-                };
-                self.acquire_source(p.source(), install_name.as_deref(), fetch)
-                    .map(drop)
-            }
-            Some(ChangeDetail::PendingInstall { .. }) | None => {
-                Err(invalid("change has no executable preview"))
-            }
-        };
-        match applied {
-            Ok(()) => ChangeOutcome::Applied,
-            Err(error) => ChangeOutcome::Failed {
-                error: error.to_string(),
-            },
-        }
     }
 }

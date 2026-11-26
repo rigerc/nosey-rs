@@ -11,7 +11,9 @@ mod index;
 mod model;
 /// Explicit discovery, approval and refresh using original-byte verification.
 pub mod review;
+mod skill;
 mod snapshot;
+pub use skill::{SKILL_EXTENSION_KEY, SkillExtension};
 mod transport;
 use ai_catalog::AiCatalog;
 pub use ai_catalog_validate::Fetch;
@@ -61,17 +63,21 @@ pub fn intelligence(catalog: &AiCatalog, key: &str) -> Result<Option<Intelligenc
     let Some(value) = catalog.extensions.as_ref().and_then(|m| m.get(key)) else {
         return Ok(None);
     };
-    let version = value
-        .get("schemaVersion")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| Error::Invalid("missing schemaVersion".into()))?;
-    let version =
-        semver::Version::parse(version).map_err(|_| Error::Invalid("extension version".into()))?;
-    if version.major != 1 {
+    if extension_major(value)? != 1 {
         return Ok(None);
     }
     let data: Intelligence = serde_json::from_value(value.clone())
         .map_err(|_| Error::Invalid("intelligence model".into()))?;
     data.validate()?;
     Ok(Some(data))
+}
+
+fn extension_major(value: &serde_json::Value) -> Result<u64, Error> {
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| Error::Invalid("missing schemaVersion".into()))?;
+    semver::Version::parse(version)
+        .map(|version| version.major)
+        .map_err(|_| Error::Invalid("extension version".into()))
 }
