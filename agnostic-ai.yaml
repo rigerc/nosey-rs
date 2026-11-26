@@ -1,4 +1,7 @@
+# yamllint disable rule:line-length
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Chemaclass/agnostic-ai/v0.95.0/docs/schemas/config.schema.json
+# yamllint enable rule:line-length
+---
 version: 1
 requires: ">=0.95.0"
 builtins: [handoff]

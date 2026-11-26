@@ -29,35 +29,35 @@ Use the `bd` CLI when shell access is available. It is the most compact and dire
 
 1. Find work:
 
-```bash
-bd ready
-bd list --status=open
-bd list --status=in_progress
-```
+   ```bash
+   bd ready
+   bd list --status=open
+   bd list --status=in_progress
+   ```
 
 2. Inspect before editing:
 
-```bash
-bd show <id>
-```
+   ```bash
+   bd show <id>
+   ```
 
 3. Claim work atomically:
 
-```bash
-bd update <id> --claim
-```
+   ```bash
+   bd update <id> --claim
+   ```
 
 4. Create durable follow-up work when implementation reveals new tasks:
 
-```bash
-bd create "Short title" --description="Why this exists and what needs to be done" --type=task --priority=2
-```
+   ```bash
+   bd create "Short title" --description="Why this exists and what needs to be done" --type=task --priority=2
+   ```
 
 5. Close completed work:
 
-```bash
-bd close <id> --reason="Completed"
-```
+   ```bash
+   bd close <id> --reason="Completed"
+   ```
 
 ## What Belongs In Beads
 
