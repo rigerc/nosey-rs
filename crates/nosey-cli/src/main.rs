@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_os = "linux")]
+mod acquisition;
+#[cfg(target_os = "linux")]
 mod maintenance;
 #[cfg(target_os = "linux")]
 mod plan;
@@ -23,7 +25,7 @@ use std::{
 };
 
 #[derive(Parser)]
-#[command(about = "Nosey development slice (local fixtures only)")]
+#[command(about = "Nosey development slice")]
 struct Args {
     #[arg(long)]
     state: PathBuf,
@@ -54,7 +56,7 @@ enum Command {
         #[arg(long)]
         approve_fixture: bool,
     },
-    /// Preview a link from a local fixture into an existing target.
+    /// Preview a link from the central library into an existing target.
     #[cfg(target_os = "linux")]
     PreviewInstall {
         library: PathBuf,
@@ -78,6 +80,9 @@ enum Command {
     #[cfg(target_os = "linux")]
     #[command(flatten)]
     Plan(plan::Command),
+    #[cfg(target_os = "linux")]
+    #[command(flatten)]
+    Acquisition(acquisition::Command),
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -171,12 +176,12 @@ fn main() -> Result<()> {
         #[cfg(target_os = "linux")]
         Command::Plan(command) => plan::run(command, &state)?,
         #[cfg(target_os = "linux")]
+        Command::Acquisition(command) => acquisition::run(command, &state)?,
+        #[cfg(target_os = "linux")]
         Command::AuditLinks { library } => {
             let library = Library::open(&state, &library)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&library.audit_links(&state)?)?
-            );
+            let audit = library.audit_links(&state)?;
+            println!("{}", serde_json::to_string_pretty(&audit)?);
         }
         Command::ScanFixture {
             root,

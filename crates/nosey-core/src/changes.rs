@@ -69,13 +69,14 @@ pub struct InstallPreview {
     pub project: PathBuf,
     /// Explicit existing project-relative target directory.
     pub target: PathBuf,
-    /// Fixture artifact identity.
+    /// Canonical artifact identity.
     pub artifact: String,
     /// Exact destination path.
     pub destination: PathBuf,
     /// Active central skill directory.
     pub source: PathBuf,
-    /// Local tree digest checked at preview.
+    /// Local tree digest when the artifact is already available.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub tree_sha256: String,
     /// Independent reason requested.
     pub reason: InstallReason,
@@ -198,6 +199,26 @@ impl Library {
         artifact: &str,
         reason: InstallReason,
     ) -> Result<InstallPreview, Error> {
+        let skill = self.get(artifact)?;
+        self.preview_skill(
+            state,
+            project,
+            target,
+            artifact,
+            reason,
+            (&skill.name, &skill.source.tree_sha256),
+        )
+    }
+
+    pub(crate) fn preview_skill(
+        &self,
+        state: &State,
+        project: &Path,
+        target: &Path,
+        artifact: &str,
+        reason: InstallReason,
+        skill: (&str, &str),
+    ) -> Result<InstallPreview, Error> {
         let project = project.canonicalize()?;
         if !state.projects.contains_key(&project)
             || project.starts_with(&self.root)
@@ -211,12 +232,13 @@ impl Library {
             return Err(invalid("invalid preset reason"));
         }
         let target = relative(target)?;
-        let skill = self.get(artifact)?;
+        let (skill_name, digest) = skill;
+        crate::library::skill_name(skill_name)?;
         let parent = target_dir(&project, &target)?;
-        let destination = project.join(&target).join(&skill.name);
+        let destination = project.join(&target).join(skill_name);
         let source = self.object_dir(artifact).join("skill");
         let record = self.link_record(&destination)?;
-        let status = classify(&parent, Path::new(&skill.name), &source, record.as_ref())?;
+        let status = classify(&parent, Path::new(skill_name), &source, record.as_ref())?;
         let status = if record
             .as_ref()
             .is_some_and(|r| r.artifact != artifact || r.project != project)
@@ -231,7 +253,7 @@ impl Library {
             artifact: artifact.into(),
             destination,
             source,
-            tree_sha256: skill.source.tree_sha256,
+            tree_sha256: digest.into(),
             reason,
             status,
             fingerprint: String::new(),
@@ -255,13 +277,33 @@ impl Library {
     /// Rejects stale, occupied, recovery-needed or unsafe changes. A crash or
     /// post-creation error leaves a pending journal rather than claiming ownership.
     pub fn apply(&self, state: &State, approved: &InstallPreview) -> Result<Status, Error> {
+        self.apply_install(state, approved, None)
+    }
+
+    pub(crate) fn apply_install(
+        &self,
+        state: &State,
+        approved: &InstallPreview,
+        bundle: Option<&crate::library::BundleSource>,
+    ) -> Result<Status, Error> {
         let _mutation = self.lock_mutation()?;
-        let fresh = self.preview(
+        let skill = match bundle {
+            Some(source) => self
+                .preview_acquire(source)?
+                .cached
+                .ok_or_else(|| invalid("required bundle acquisition did not succeed"))?,
+            None => self.get(&approved.artifact)?,
+        };
+        // A pending install binds the representation digest in its acquisition
+        // detail. Its local tree fingerprint is only known after extraction.
+        let digest = bundle.map_or(skill.source.tree_sha256.as_str(), |_| "");
+        let fresh = self.preview_skill(
             state,
             &approved.project,
             &approved.target,
             &approved.artifact,
             approved.reason.clone(),
+            (&skill.name, digest),
         )?;
         if &fresh != approved {
             return Err(invalid("stale preview; review again"));
@@ -305,7 +347,7 @@ impl Library {
             reasons: BTreeSet::from([fresh.reason]),
             parent_identity: identity(&parent)?,
             link_identity: None,
-            tree_sha256: Some(fresh.tree_sha256),
+            tree_sha256: Some(skill.source.tree_sha256),
         };
         atomic_json(&journal_dir, &journal, &record, false)?;
         // Atomic non-replacing symlink creation; never delete a competing path.

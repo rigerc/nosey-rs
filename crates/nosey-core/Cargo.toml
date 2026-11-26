@@ -23,4 +23,5 @@ serde-saphyr = { workspace = true }
 walkdir = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+zip = { workspace = true }
 rustix = { workspace = true }

@@ -9,12 +9,15 @@
 use crate::{
     Error, State,
     changes::{InstallPreview, InstallReason, LinkAction, LinkPreview, Status},
-    library::{Library, UpdatePreview, hash},
+    library::{AcquisitionPreview, BundleSource, Library, UpdatePreview, hash, skill_name},
     library_io::invalid,
 };
+use nosey_registry::Fetch;
+mod acquisition;
+use acquisition::{Acquisitions, HttpsFetch, acquisitions};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -47,6 +50,14 @@ pub enum ChangeRequest {
         /// Reason to remove.
         reason: InstallReason,
     },
+    /// Retrieve a digest-pinned Agent Skill bundle from a selected catalog entry.
+    AcquireLibrarySkill {
+        /// Reviewed catalog source and canonical identity.
+        source: BundleSource,
+        /// Expected manifest name for any dependent installs in this batch.
+        #[serde(default)]
+        install_name: Option<String>,
+    },
     /// Replace a library skill's content from an explicit local source.
     UpdateLibrarySkill {
         /// Library artifact identity.
@@ -62,8 +73,9 @@ impl ChangeRequest {
     const fn apply_rank(&self) -> u8 {
         match self {
             Self::UnlinkManaged { .. } => 0,
-            Self::InstallLink { .. } => 1,
-            Self::UpdateLibrarySkill { .. } => 2,
+            Self::AcquireLibrarySkill { .. } => 1,
+            Self::InstallLink { .. } => 2,
+            Self::UpdateLibrarySkill { .. } => 3,
         }
     }
 }
@@ -74,6 +86,15 @@ impl ChangeRequest {
 pub enum ChangeDetail {
     /// Install preview.
     Install(InstallPreview),
+    /// Install destination reviewed before a bundle is available locally.
+    PendingInstall {
+        /// Project and destination state bound to the bundle digest.
+        install: InstallPreview,
+        /// Exact source whose acquisition must succeed first.
+        source: BundleSource,
+    },
+    /// Acquisition preview.
+    Acquire(AcquisitionPreview),
     /// Unlink preview.
     Unlink(LinkPreview),
     /// Library update preview.
@@ -188,12 +209,13 @@ impl Library {
         if requests.len() > MAX_PLAN_CHANGES {
             return Err(invalid("too many changes in one plan"));
         }
+        let acquisitions = acquisitions(requests);
         let mut seen = BTreeSet::new();
         let mut changes = Vec::new();
         for request in requests {
             let id = request_id(request)?;
             if seen.insert(id.clone()) {
-                changes.push(self.plan_one(state, id, request)?);
+                changes.push(self.plan_one(state, id, request, &acquisitions)?);
             }
         }
         let fingerprint = hash(&serde_json::to_vec(
@@ -220,6 +242,19 @@ impl Library {
         state: &State,
         approved: &ChangePlan,
     ) -> Result<Vec<ChangeResult>, Error> {
+        self.apply_plan_with_fetch(state, approved, &HttpsFetch)
+    }
+
+    /// Apply an approved plan using the supplied byte transport for acquisitions.
+    ///
+    /// # Errors
+    /// Rejects a stale plan before mutation. Individual failures are reported per item.
+    pub fn apply_plan_with_fetch(
+        &self,
+        state: &State,
+        approved: &ChangePlan,
+        fetch: &impl Fetch,
+    ) -> Result<Vec<ChangeResult>, Error> {
         let requests: Vec<_> = approved.changes.iter().map(|c| c.request.clone()).collect();
         let fresh = self.plan(state, &requests)?;
         if &fresh != approved {
@@ -231,7 +266,7 @@ impl Library {
         for i in order {
             let change = &fresh.changes[i];
             outcomes[i] = Some(change.blocker.as_ref().map_or_else(
-                || self.apply_one(state, change),
+                || self.apply_one(state, change, fetch),
                 |reason| ChangeOutcome::Blocked {
                     reason: reason.clone(),
                 },
@@ -253,14 +288,18 @@ impl Library {
         state: &State,
         id: String,
         request: &ChangeRequest,
+        acquisitions: &Acquisitions<'_>,
     ) -> Result<PlannedChange, Error> {
-        let (detail, blocker) = match self.preview_request(state, request) {
+        let (detail, blocker) = match self.preview_request(state, request, acquisitions) {
             Ok((detail, blocker)) => (Some(detail), blocker),
             Err(error) => (None, Some(error.to_string())),
         };
         let fingerprint = match &detail {
             Some(ChangeDetail::Install(p)) => p.fingerprint.clone(),
             Some(ChangeDetail::Unlink(p)) => p.fingerprint.clone(),
+            Some(ChangeDetail::Acquire(_) | ChangeDetail::PendingInstall { .. }) => {
+                hash(&serde_json::to_vec(&(&id, &detail))?)
+            }
             Some(ChangeDetail::Update(p)) => p.fingerprint.clone(),
             None => hash(&serde_json::to_vec(&("blocked", &id, &blocker))?),
         };
@@ -277,6 +316,7 @@ impl Library {
         &self,
         state: &State,
         request: &ChangeRequest,
+        acquisitions: &Acquisitions<'_>,
     ) -> Result<(ChangeDetail, Option<String>), Error> {
         Ok(match request {
             ChangeRequest::InstallLink {
@@ -284,16 +324,63 @@ impl Library {
                 target,
                 artifact,
                 reason,
-            } => {
-                let preview = self.preview(state, project, target, artifact, reason.clone())?;
-                let blocker = match preview.status {
-                    Status::Available | Status::Managed => None,
-                    Status::Occupied => {
-                        Some("destination is occupied by a path Nosey does not own")
+            } => match self.preview(state, project, target, artifact, reason.clone()) {
+                Ok(preview) => {
+                    let blocker = install_blocker(&preview);
+                    (ChangeDetail::Install(preview), blocker)
+                }
+                Err(error) => {
+                    let Some(Some(ChangeRequest::AcquireLibrarySkill {
+                        source,
+                        install_name: Some(name),
+                    })) = acquisitions.get(artifact.as_str())
+                    else {
+                        return Err(error);
+                    };
+                    let acquisition = self.preview_acquire(source)?;
+                    if acquisition.cached.is_some() {
+                        return Err(error);
                     }
-                    Status::RecoveryRequired => Some("destination link journal needs recovery"),
-                };
-                (ChangeDetail::Install(preview), blocker.map(Into::into))
+                    let install = self.preview_skill(
+                        state,
+                        project,
+                        target,
+                        artifact,
+                        reason.clone(),
+                        (name, ""),
+                    )?;
+                    let blocker = install_blocker(&install);
+                    (
+                        ChangeDetail::PendingInstall {
+                            install,
+                            source: source.clone(),
+                        },
+                        blocker,
+                    )
+                }
+            },
+            ChangeRequest::AcquireLibrarySkill {
+                source,
+                install_name,
+            } => {
+                if acquisitions
+                    .get(source.artifact.as_str())
+                    .is_some_and(Option::is_none)
+                {
+                    return Err(invalid("conflicting acquisitions for one artifact"));
+                }
+                let preview = self.preview_acquire(source)?;
+                if let Some(name) = install_name {
+                    skill_name(name)?;
+                    if preview
+                        .cached
+                        .as_ref()
+                        .is_some_and(|cached| &cached.name != name)
+                    {
+                        return Err(invalid("cached skill name differs from the expected name"));
+                    }
+                }
+                (ChangeDetail::Acquire(preview), None)
             }
             ChangeRequest::UnlinkManaged {
                 destination,
@@ -311,9 +398,27 @@ impl Library {
         })
     }
 
-    fn apply_one(&self, state: &State, reviewed: &PlannedChange) -> ChangeOutcome {
+    fn apply_one(
+        &self,
+        state: &State,
+        reviewed: &PlannedChange,
+        fetch: &impl Fetch,
+    ) -> ChangeOutcome {
+        if let Some(ChangeDetail::PendingInstall { install, source }) = &reviewed.detail {
+            return match self.apply_install(state, install, Some(source)) {
+                Ok(_) => ChangeOutcome::Applied,
+                Err(error) => ChangeOutcome::Failed {
+                    error: error.to_string(),
+                },
+            };
+        }
         // Earlier items in this plan may have changed the observed state.
-        let current = match self.plan_one(state, reviewed.id.clone(), &reviewed.request) {
+        let current = match self.plan_one(
+            state,
+            reviewed.id.clone(),
+            &reviewed.request,
+            &BTreeMap::new(),
+        ) {
             Ok(current) if current.fingerprint == reviewed.fingerprint => current,
             Ok(_) => return ChangeOutcome::Stale,
             Err(error) => {
@@ -326,7 +431,15 @@ impl Library {
             Some(ChangeDetail::Install(p)) => self.apply(state, p).map(drop),
             Some(ChangeDetail::Unlink(p)) => self.apply_unlink(p).map(drop),
             Some(ChangeDetail::Update(p)) => self.apply_update(p).map(drop),
-            None => Err(invalid("change has no preview")),
+            Some(ChangeDetail::Acquire(p)) => {
+                let ChangeRequest::AcquireLibrarySkill { install_name, .. } = &reviewed.request
+                else {
+                    return ChangeOutcome::Stale;
+                };
+                self.acquire_named_bundle(&p.source, install_name.as_deref(), fetch)
+                    .map(drop)
+            }
+            _ => Err(invalid("change has no executable preview")),
         };
         match applied {
             Ok(()) => ChangeOutcome::Applied,
@@ -334,5 +447,13 @@ impl Library {
                 error: error.to_string(),
             },
         }
+    }
+}
+
+fn install_blocker(preview: &InstallPreview) -> Option<String> {
+    match preview.status {
+        Status::Available | Status::Managed => None,
+        Status::Occupied => Some("destination is occupied by a path Nosey does not own".into()),
+        Status::RecoveryRequired => Some("destination link journal needs recovery".into()),
     }
 }
