@@ -1,11 +1,17 @@
 //! Development-only headless slice; production connectivity/trust orchestration remains a gate.
 #![forbid(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+mod maintenance;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use nosey_core::{State, skill_discovery::inspect_target};
 #[cfg(target_os = "linux")]
-use nosey_core::{library::Library, changes::{InstallReason, InstallPreview}};
+use nosey_core::{
+    changes::{InstallPreview, InstallReason},
+    library::Library,
+};
 use nosey_registry::{CatalogIndex, RegistryInput, load_snapshot};
 use nosey_scanner::Settings;
 use std::{
@@ -39,13 +45,34 @@ enum Command {
     },
     /// Stage an explicitly selected local fixture skill (not a trusted registry entry).
     #[cfg(target_os = "linux")]
-    ImportFixture { library: PathBuf, id: String, source: PathBuf, #[arg(long)] approve_fixture: bool },
+    ImportFixture {
+        library: PathBuf,
+        id: String,
+        source: PathBuf,
+        #[arg(long)]
+        approve_fixture: bool,
+    },
     /// Preview a link from a local fixture into an existing target.
     #[cfg(target_os = "linux")]
-    PreviewInstall { library: PathBuf, root: PathBuf, target: PathBuf, id: String },
+    PreviewInstall {
+        library: PathBuf,
+        root: PathBuf,
+        target: PathBuf,
+        id: String,
+    },
     /// Apply only the exact previously displayed fingerprint.
     #[cfg(target_os = "linux")]
-    ApplyInstall { library: PathBuf, root: PathBuf, target: PathBuf, id: String, #[arg(long)] approve: String },
+    ApplyInstall {
+        library: PathBuf,
+        root: PathBuf,
+        target: PathBuf,
+        id: String,
+        #[arg(long)]
+        approve: String,
+    },
+    #[cfg(target_os = "linux")]
+    #[command(flatten)]
+    Maintenance(maintenance::Command),
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -90,50 +117,126 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&audit)?);
         }
         #[cfg(target_os = "linux")]
-        Command::ImportFixture { library, id, source, approve_fixture } => {
+        Command::ImportFixture {
+            library,
+            id,
+            source,
+            approve_fixture,
+        } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
             let library = Library::open(&state, &library)?;
-            println!("{}", serde_json::to_string_pretty(&library.import_fixture(&id, &source)?)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&library.import_fixture(&id, &source)?)?
+            );
         }
         #[cfg(target_os = "linux")]
-        Command::PreviewInstall { library, root, target, id } => {
+        Command::PreviewInstall {
+            library,
+            root,
+            target,
+            id,
+        } => {
             let library = Library::open(&state, &library)?;
             let preview = library.preview(&state, &root, &target, &id, InstallReason::Manual)?;
             println!("{}", serde_json::to_string_pretty(&preview)?);
         }
         #[cfg(target_os = "linux")]
-        Command::ApplyInstall { library, root, target, id, approve } => {
+        Command::ApplyInstall {
+            library,
+            root,
+            target,
+            id,
+            approve,
+        } => {
             let library = Library::open(&state, &library)?;
-            let preview: InstallPreview = library.preview(&state, &root, &target, &id, InstallReason::Manual)?;
-            anyhow::ensure!(preview.fingerprint == approve, "stale approval; review preview again");
-            println!("{}", serde_json::to_string_pretty(&library.apply(&state, &preview)?)?);
+            let preview: InstallPreview =
+                library.preview(&state, &root, &target, &id, InstallReason::Manual)?;
+            anyhow::ensure!(
+                preview.fingerprint == approve,
+                "stale approval; review preview again"
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&library.apply(&state, &preview)?)?
+            );
         }
+        #[cfg(target_os = "linux")]
+        Command::Maintenance(command) => maintenance::run(command, &state)?,
         #[cfg(target_os = "linux")]
         Command::AuditLinks { library } => {
             let library = Library::open(&state, &library)?;
-            println!("{}", serde_json::to_string_pretty(&library.audit_links(&state)?)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&library.audit_links(&state)?)?
+            );
         }
-        Command::ScanFixture { root, catalog, registry_id, extension, approve_fixture, mcp } => {
+        Command::ScanFixture {
+            root,
+            catalog,
+            registry_id,
+            extension,
+            approve_fixture,
+            mcp,
+        } => {
             anyhow::ensure!(approve_fixture, "explicit --approve-fixture required");
-            let snapshot = load_snapshot(&catalog)?;
-            let index = CatalogIndex::build(
-                vec![RegistryInput {
-                    id: registry_id, priority: 0, approved: true,
-                    enabled: true, catalog: snapshot.catalog,
-                }],
+            scan_fixture(
+                &mut state,
+                &args.state,
+                &root,
+                &catalog,
+                registry_id,
                 &extension,
+                mcp,
             )?;
-            let root = root.canonicalize()?;
-            let settings = Settings { mcp, ..Settings::default() };
-            let attempt = state.scan(&root, &index, &settings, &AtomicBool::new(false)).map(Clone::clone);
-            state.save(&args.state)?;
-            let scan = attempt?;
-            let project = state.projects.get(&root).context("registered project disappeared")?;
-            // Explicit synthetic fixture mode is not a production online session.
-            let evaluation = project.reevaluate(&index, &settings, true,
-                &BTreeSet::new(), &BTreeMap::new(), &BTreeSet::new())?;
-            println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
         }
     }
+    Ok(())
+}
+
+fn scan_fixture(
+    state: &mut State,
+    state_path: &std::path::Path,
+    root: &std::path::Path,
+    catalog: &std::path::Path,
+    registry_id: String,
+    extension: &str,
+    mcp: bool,
+) -> Result<()> {
+    let snapshot = load_snapshot(catalog)?;
+    let index = CatalogIndex::build(
+        vec![RegistryInput {
+            id: registry_id,
+            priority: 0,
+            approved: true,
+            enabled: true,
+            catalog: snapshot.catalog,
+        }],
+        extension,
+    )?;
+    let root = root.canonicalize()?;
+    let settings = Settings {
+        mcp,
+        ..Settings::default()
+    };
+    let attempt = state
+        .scan(&root, &index, &settings, &AtomicBool::new(false))
+        .cloned();
+    state.save(state_path)?;
+    let scan = attempt?;
+    let project = state
+        .projects
+        .get(&root)
+        .context("registered project disappeared")?;
+    // Explicit synthetic fixture mode is not a production online session.
+    let evaluation = project.reevaluate(
+        &index,
+        &settings,
+        true,
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&(scan, evaluation))?);
     Ok(())
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 //! Project activity ordering adapted from Kitter v0.2.6, src/config.rs.
-//! Upstream: https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2
+//!
+//! Upstream: <https://github.com/what1f/kitter/tree/19711db044aabfa9846a65aaee693276d65af5c2>
 //! See licenses/kitter-APACHE-2.0.txt and NOTICE.
 
 use crate::{Error, State};
@@ -53,9 +54,15 @@ impl State {
             .ok()
             .and_then(|duration| u64::try_from(duration.as_millis()).ok())
             .unwrap_or_default();
-        let next = self.project_activity.values().copied().max()
-            .unwrap_or_default().saturating_add(1);
-        self.project_activity.insert(root.to_path_buf(), now.max(next));
+        let next = self
+            .project_activity
+            .values()
+            .copied()
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1);
+        self.project_activity
+            .insert(root.to_path_buf(), now.max(next));
     }
 }
 
@@ -65,7 +72,8 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn registers_once_orders_and_forgets_without_mutating_project() -> Result<(), Box<dyn std::error::Error>> {
+    fn registers_once_orders_and_forgets_without_mutating_project()
+    -> Result<(), Box<dyn std::error::Error>> {
         let temp = tempfile::tempdir()?;
         let a = temp.path().join("a");
         let b = temp.path().join("b");
@@ -83,7 +91,7 @@ mod tests {
         assert!(!state.project_activity.contains_key(&a));
         fs::remove_dir(&b)?;
         assert_eq!(state.unregister(&b)?, b);
-        assert!(state.project_paths().is_empty());
+        assert_eq!(state.project_paths(), [] as [std::path::PathBuf; 0]);
         Ok(())
     }
 

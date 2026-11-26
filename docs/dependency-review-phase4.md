@@ -61,3 +61,24 @@ cargo audit
 ```
 
 Record raw output and exact chosen versions. No score can override an applicable advisory or license failure. Preserve the approved development/build-remediation separation; do not claim release readiness.
+
+## YAML migration decision
+
+Adopt [serde-saphyr 2.2.0](https://docs.rs/crate/serde-saphyr/2.2.0), the stable release reviewed
+against Rust 1.99. It declares Rust 1.89 and MIT OR Apache-2.0. The
+[upstream repository](https://github.com/bourumir-wyngs/serde-saphyr) is active and unarchived
+(GitHub reported a push on 2026-11-25). The standard library has no YAML parser, JSON does not
+cover the YAML fixtures, and serde_norway retains the libyaml-derived parser design without
+the same resource-budget API. The discovery evaluator ranked serde-saphyr 90/100 and
+serde_norway 64/100. Its RustSec lookup was inconclusive, so the version-aware lockfile
+audit and Cargo Deny advisory check were used for the resolved versions.
+
+Only the `deserialize` feature is enabled. The direct graph adds granit-parser 2.2.0,
+annotate-snippets 0.12.18, encoding_rs_io 0.1.8, num-traits 0.2.19 and smallvec 1.16.5,
+alongside Serde. Serialization, comment capture, file inclusion and property
+interpolation are disabled. All readers reject duplicate keys and anchor/alias events,
+limit depth and scalar bytes, and treat merge keys as ordinary keys so providers
+can retain their existing merge checks. Registry authoring decodes directly to its
+existing typed models. Provider lookups retain a value tree to inspect heterogeneous
+mappings and preserve their field-specific diagnostics. The provider tree uses JSON
+values, so YAML collection keys and non-finite numbers are outside its supported model.

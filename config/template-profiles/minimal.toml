@@ -19,6 +19,7 @@ exclude_paths = [
   "docs/patterns",
   ".agents/skills/architecture-diagram",
   ".agents/skills/atomic-commit",
+  ".agents/skills/beads",
   ".agents/skills/codacy",
   ".agents/skills/dora-report",
   ".agents/skills/gpui-actions",

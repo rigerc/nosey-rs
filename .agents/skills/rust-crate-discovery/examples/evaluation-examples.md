@@ -3,7 +3,7 @@
 > Worked scenarios for [`scripts/crate_eval.py`](../scripts/crate_eval.py),
 > companion to [`SKILL.md`](../SKILL.md). Each shows the command, output, and
 > **how to read the output and decide**.
-
+>
 > **All numeric outputs below are illustrative** — captured to show the *shape*
 > of the report. Live numbers shift daily; re-run the commands for current
 > values. The decision logic is stable. Commands assume you are in the skill

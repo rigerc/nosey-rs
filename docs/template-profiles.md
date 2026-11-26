@@ -34,8 +34,8 @@ optional post-init action, not a separate scaffold.
 
 | Class | Skills |
 |---|---|
-| Core Rust project | `anti-ai-slop`, `build-rust`, `crates-io-name-check`, `harness`, `lint-rust`, `privacy-first`, `release-rust`, `reviewing-pull-requests`, `secret-lint`, `test-rust`, `verify-actions` |
-| Optional advanced development | `atomic-commit`, `goap-agent`, `self-fix-loop`, `task-decomposition`, `tokio-performance`, `triz-analysis`, `triz-solver` |
+| Core Rust project | `anti-ai-slop`, `build-rust`, `crates-io-name-check`, `harness`, `lint-rust`, `privacy-first`, `release-rust`, `reviewing-pull-requests`, `rust-crate-discovery`, `secret-lint`, `test-rust`, `verify-actions` |
+| Optional advanced development | `atomic-commit`, `beads`, `goap-agent`, `self-fix-loop`, `task-decomposition`, `tokio-performance`, `triz-analysis`, `triz-solver` |
 | Template-maintainer/tooling | `architecture-diagram`, `codacy`, `dora-report`, `issue-triage`, `metrics-reporter`, `skill-creator`, `skill-evaluator`, `stacked-prs` |
 
 `goap-agent`, `self-fix-loop`, `task-decomposition`, `triz-analysis`, `triz-solver`,

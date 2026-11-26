@@ -20,6 +20,7 @@ const CORE_SKILLS: &[&str] = &[
     "privacy-first",
     "release-rust",
     "reviewing-pull-requests",
+    "rust-crate-discovery",
     "secret-lint",
     "test-rust",
     "verify-actions",

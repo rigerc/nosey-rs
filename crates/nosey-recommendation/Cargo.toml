@@ -11,5 +11,5 @@ workspace = true
 
 [dependencies]
 serde = { workspace = true }
-nosey-registry = { path = "../nosey-registry" }
-nosey-scanner = { path = "../nosey-scanner" }
+nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
+nosey-scanner = { version = "0.0.0", path = "../nosey-scanner" }

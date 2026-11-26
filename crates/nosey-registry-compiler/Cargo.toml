@@ -12,10 +12,11 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 anyhow = { workspace = true }
-nosey-registry = { path = "../nosey-registry" }
-nosey-scanner = { path = "../nosey-scanner" }
+nosey-registry = { version = "0.0.0", path = "../nosey-registry" }
+nosey-scanner = { version = "0.0.0", path = "../nosey-scanner" }
 serde_json = { workspace = true }
 
 [[bin]]
 name = "nosey-registry"
+doc = false
 path = "src/main.rs"
