@@ -67,6 +67,20 @@ enum Command {
         #[arg(long)]
         approve: String,
     },
+    /// Show how an interrupted link journal can be recovered.
+    #[cfg(target_os = "linux")]
+    PreviewRecover {
+        library: PathBuf,
+        destination: PathBuf,
+    },
+    /// Recover a link journal using an approved preview.
+    #[cfg(target_os = "linux")]
+    ApplyRecover {
+        library: PathBuf,
+        destination: PathBuf,
+        #[arg(long)]
+        approve: String,
+    },
     /// Audit managed, pending and detached link records without changing them.
     #[cfg(target_os = "linux")]
     AuditLinks { library: PathBuf },
@@ -153,6 +167,34 @@ fn main() -> Result<()> {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&library.apply(&state, &preview)?)?
+            );
+        }
+        #[cfg(target_os = "linux")]
+        Command::PreviewRecover {
+            library,
+            destination,
+        } => {
+            let library = Library::open(&state, &library)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&library.preview_recover(&destination)?)?
+            );
+        }
+        #[cfg(target_os = "linux")]
+        Command::ApplyRecover {
+            library,
+            destination,
+            approve,
+        } => {
+            let library = Library::open(&state, &library)?;
+            let preview = library.preview_recover(&destination)?;
+            anyhow::ensure!(
+                preview.fingerprint == approve,
+                "stale approval; review preview again"
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&library.apply_recover(&preview)?)?
             );
         }
         #[cfg(target_os = "linux")]

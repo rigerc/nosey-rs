@@ -123,3 +123,59 @@ fn existing_link_is_never_adopted_and_stale_preview_never_overwrites()
     );
     Ok(())
 }
+
+const FIXTURE_ID: &str = "urn:nosey:fixture:sample";
+const MANIFEST: &str = "---\nname: sample\ndescription: Fixture\n---\n";
+
+#[test]
+fn recovery_requires_fresh_approval_and_preserves_destination()
+-> Result<(), Box<dyn std::error::Error>> {
+    let central = private_tempdir()?;
+    let source = tempfile::tempdir()?;
+    let project = tempfile::tempdir()?;
+    let target = Path::new("skills");
+    fs::create_dir(project.path().join(target))?;
+    fs::write(source.path().join("SKILL.md"), MANIFEST)?;
+    let mut state = State::default();
+    let root = state.register(project.path())?;
+    let library = Library::open(&state, central.path())?;
+    library.import_fixture(FIXTURE_ID, source.path())?;
+    let install = library.preview(&state, &root, target, FIXTURE_ID, InstallReason::Manual)?;
+    library.apply(&state, &install)?;
+    let journal = fs::read_dir(central.path().join("links"))?
+        .next()
+        .ok_or("missing journal")??
+        .path();
+    let mut pending: serde_json::Value = serde_json::from_slice(&fs::read(&journal)?)?;
+    pending["link_identity"] = serde_json::Value::Null;
+    fs::write(&journal, serde_json::to_vec(&pending)?)?;
+
+    let confirm = library.preview_recover(&install.destination)?;
+    fs::remove_file(&install.destination)?;
+    assert!(library.apply_recover(&confirm).is_err());
+    let drop_record = library.preview_recover(&install.destination)?;
+    fs::write(&install.destination, "foreign")?;
+    assert!(library.apply_recover(&drop_record).is_err());
+    let blocked = library.preview_recover(&install.destination)?;
+    assert!(library.apply_recover(&blocked).is_err());
+    assert_eq!(fs::read_to_string(&install.destination)?, "foreign");
+
+    fs::remove_file(&install.destination)?;
+    symlink(&install.source, &install.destination)?;
+    let confirm = library.preview_recover(&install.destination)?;
+    library.apply_recover(&confirm)?;
+    assert_eq!(fs::read_link(&install.destination)?, install.source);
+    assert_eq!(library.audit_links(&state)?[0].status, Status::Managed);
+
+    fs::rename(root.join(target), root.join("moved"))?;
+    fs::create_dir(root.join(target))?;
+    let moved = library.preview_recover(&install.destination)?;
+    assert!(library.apply_recover(&moved).is_err());
+    fs::remove_dir(root.join(target))?;
+    fs::rename(root.join("moved"), root.join(target))?;
+    fs::remove_file(&install.destination)?;
+    let drop_record = library.preview_recover(&install.destination)?;
+    library.apply_recover(&drop_record)?;
+    assert!(library.audit_links(&state)?.is_empty());
+    Ok(())
+}
