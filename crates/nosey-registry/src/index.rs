@@ -34,6 +34,8 @@ pub struct SelectedSkill {
 pub struct CatalogIndex {
     /// Canonical skill ID to selected representation.
     pub skills: BTreeMap<String, SelectedSkill>,
+    /// Approved, enabled registries represented by the supplied snapshots.
+    pub registries: BTreeSet<String>,
     /// Active intelligence in priority order.
     pub intelligence: Vec<(u32, Intelligence)>,
     /// Resolvable technology identifiers.
@@ -50,6 +52,7 @@ impl CatalogIndex {
         inputs.sort_by(|a, b| (a.priority, &a.id).cmp(&(b.priority, &b.id)));
         let mut index = Self::default();
         for input in inputs.into_iter().filter(|x| x.enabled && x.approved) {
+            index.registries.insert(input.id.clone());
             let mut entries = input.catalog.entries.clone();
             entries.sort_by(|a, b| {
                 a.identifier

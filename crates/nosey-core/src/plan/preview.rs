@@ -100,6 +100,10 @@ impl Library {
                 let blocker = preview.blocker.map(Into::into);
                 (ChangeDetail::Remove(preview), blocker)
             }
+            ChangeRequest::UpdateRemoteLibrarySkill { source } => (
+                ChangeDetail::RemoteUpdate(Box::new(self.preview_remote_update(source)?)),
+                None,
+            ),
             ChangeRequest::UpdateLibrarySkill { artifact, source } => (
                 ChangeDetail::Update(self.preview_update(artifact, source)?),
                 None,

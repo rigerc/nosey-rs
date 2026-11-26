@@ -129,8 +129,7 @@ validated manifest name matches before publishing.
 The library preserves the catalog identifier and registry provenance. An intact
 matching active copy is reused without fetching and stays installable offline.
 An existing copy with different provenance or content requires an explicit
-update. Registry bundle replacement and source availability refresh are
-future work.
+update when the selected acquisition identity changes.
 
 HTTPS Agent Skill ZIP bundles must contain a root `SKILL.md`. The transport
 caps response bytes at 10 MiB. After verifying the SDK digest over the original
@@ -156,3 +155,35 @@ apply-remove-unused <library> <fixture-id> --external-references-checked --appro
 Source removal review preserves the copies it lists. Every recorded link or journal, including those retained after unregistering a project, blocks removal. Use `--external-references-checked` only after ruling out unmanaged references to the exact copy. The library cannot enumerate arbitrary external paths.
 
 In a plan, use `{"action":"remove_unused_library_skill","artifact":"urn:nosey:fixture:sample","external_references_checked":true}`. Removal runs after link changes. If an unlink clears the final reference, preview removal again so the approval reflects the new inventory.
+
+## Catalog bundle updates
+
+```text
+check-updates <library> <catalog> --registry-id <registry>
+preview-remote-update <library> <catalog> <artifact> --registry-id <registry>
+apply-remote-update <library> <catalog> <artifact> --registry-id <registry> --approve <fingerprint>
+set-update-policy <manual|notify|automatic>
+refresh-availability <library> <catalog> --registry-id <registry>
+```
+
+Supply additional active snapshots in priority order with repeated
+`--additional-catalog <registry>=<path>` options. The primary catalog has
+highest priority. Availability refers to the recorded registry and the supplied
+snapshot set. Refresh reports available, missing from catalog, or registry
+removed without writing records or deleting content. Include all active
+snapshots when using the report to distinguish missing entries from absent
+registries.
+
+Manual and notify policy report updates on explicit checks. Automatic policy
+also attempts each supported update that preserves the registry, URL origin
+and media type. A priority change that selects another registry requires manual
+review even when the digest matches. Automatic updates affect the shared
+content read through existing project and global links. This CLI has no
+background scheduler.
+
+Remote updates verify the exact replacement bytes, validate the staged skill,
+and exchange it at the stable library path. The replacement must preserve the
+installed manifest name. Batch plans use
+`{"action":"update_remote_library_skill","source":{...}}` and run these swaps
+after link changes. Old state files default to `notify` when `update_policy`
+is absent.

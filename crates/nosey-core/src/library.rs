@@ -9,8 +9,10 @@ mod cleanup;
 pub(crate) mod manifest;
 pub use acquisition::AcquisitionPreview;
 pub use nosey_registry::BundleSource;
+mod remote_update;
 mod update;
 pub use cleanup::{CleanupReport, RemovePreview};
+pub use remote_update::{AutomaticUpdateOutcome, AvailableUpdate, RemoteUpdatePreview};
 pub use update::UpdatePreview;
 
 use manifest::manifest;
@@ -84,6 +86,10 @@ pub enum Availability {
     Available,
     /// Source has become unavailable.
     Unavailable,
+    /// The recorded registry is present but omits this skill.
+    MissingFromCatalog,
+    /// The recorded registry is absent from the supplied catalog index.
+    RegistryRemoved,
 }
 
 /// Metadata for one active downloaded/local copy.
@@ -363,19 +369,16 @@ impl Library {
     ) -> Result<(), Error> {
         let objects = self.root.join("objects");
         let parent = directory(&objects)?;
-        rustix::fs::renameat_with(
-            &parent,
-            stage
-                .path()
-                .file_name()
-                .ok_or_else(|| invalid("stage name"))?,
-            &parent,
-            destination
-                .file_name()
-                .ok_or_else(|| invalid("object name"))?,
-            flags,
-        )
-        .map_err(|error| {
+        let staged_name = stage
+            .path()
+            .file_name()
+            .ok_or_else(|| invalid("stage name"))?;
+        let active_name = destination
+            .file_name()
+            .ok_or_else(|| invalid("object name"))?;
+        let rename =
+            || rustix::fs::renameat_with(&parent, staged_name, &parent, active_name, flags);
+        rename().map_err(|error| {
             if flags == rustix::fs::RenameFlags::EXCHANGE
                 && matches!(error, rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS)
             {
@@ -384,7 +387,16 @@ impl Library {
                 std::io::Error::from(error).into()
             }
         })?;
-        rustix::fs::fsync(&parent).map_err(std::io::Error::from)?;
+        if let Err(error) = rustix::fs::fsync(&parent) {
+            if flags == rustix::fs::RenameFlags::EXCHANGE {
+                rename().map_err(|rollback| {
+                    invalid(&format!(
+                        "library exchange sync failed ({error}); rollback failed ({rollback})"
+                    ))
+                })?;
+            }
+            return Err(std::io::Error::from(error).into());
+        }
         Ok(())
     }
 }

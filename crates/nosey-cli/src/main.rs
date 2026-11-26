@@ -11,6 +11,8 @@ mod plan;
 mod sync;
 #[cfg(target_os = "linux")]
 mod targets;
+#[cfg(target_os = "linux")]
+mod updates;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -93,6 +95,9 @@ enum Command {
     #[cfg(target_os = "linux")]
     #[command(flatten)]
     Sync(sync::Command),
+    #[cfg(target_os = "linux")]
+    #[command(flatten)]
+    Updates(updates::Command),
     /// Run the synthetic local-registry development flow.
     ScanFixture {
         root: PathBuf,
@@ -188,6 +193,8 @@ fn main() -> Result<()> {
         Command::Acquisition(command) => acquisition::run(command, &state)?,
         #[cfg(target_os = "linux")]
         Command::Sync(command) => sync::run(command, &mut state, &args.state)?,
+        #[cfg(target_os = "linux")]
+        Command::Updates(command) => updates::run(command, &mut state, &args.state)?,
         Command::ScanFixture {
             root,
             catalog,

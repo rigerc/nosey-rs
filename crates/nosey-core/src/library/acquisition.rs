@@ -94,6 +94,21 @@ impl Library {
             check_name(name, &record.name)?;
             return Ok(record);
         }
+        let (stage, record) = self.stage_bundle(source, name, fetch)?;
+        self.publish_stage(
+            &stage,
+            &self.object_dir(&source.artifact),
+            rustix::fs::RenameFlags::NOREPLACE,
+        )?;
+        Ok(record)
+    }
+
+    pub(super) fn stage_bundle(
+        &self,
+        source: &BundleSource,
+        name: Option<&str>,
+        fetch: &impl Fetch,
+    ) -> Result<(tempfile::TempDir, SkillRecord), Error> {
         let bytes = source
             .fetch_verified(fetch)
             .map_err(|e| invalid(&e.to_string()))?;
@@ -123,12 +138,7 @@ impl Library {
             &record,
             false,
         )?;
-        self.publish_stage(
-            &stage,
-            &self.object_dir(&source.artifact),
-            rustix::fs::RenameFlags::NOREPLACE,
-        )?;
-        Ok(record)
+        Ok((stage, record))
     }
 }
 

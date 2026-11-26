@@ -62,12 +62,28 @@ pub struct Project {
     /// Persistent dismissals keyed by canonical skill identity.
     pub dismissed: BTreeSet<String>,
 }
+/// Authorization for updates to shared library content.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePolicy {
+    /// Apply updates only after explicit approval.
+    Manual,
+    /// Report available updates for review.
+    #[default]
+    Notify,
+    /// Apply updates that preserve acquisition identity.
+    Automatic,
+}
+
 /// Prototype Nosey-owned central state; production persistence is outstanding.
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct State {
     /// Registered project directories.
     pub projects: BTreeMap<PathBuf, Project>,
+    /// Global authorization for central skill updates.
+    #[serde(default)]
+    pub update_policy: UpdatePolicy,
     /// Last explicit project activity, using Kitter's millisecond ordering.
     #[serde(default)]
     pub project_activity: BTreeMap<PathBuf, u64>,

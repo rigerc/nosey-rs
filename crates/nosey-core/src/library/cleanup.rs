@@ -215,7 +215,7 @@ impl Library {
         })
     }
 
-    fn cleanup_entries(&self) -> Result<(Vec<SkillRecord>, Vec<PathBuf>), Error> {
+    pub(super) fn cleanup_entries(&self) -> Result<(Vec<SkillRecord>, Vec<PathBuf>), Error> {
         let objects = self.root.join("objects");
         let mut entries = Vec::new();
         let mut unverifiable = Vec::new();

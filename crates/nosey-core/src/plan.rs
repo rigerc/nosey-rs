@@ -9,7 +9,10 @@
 use crate::{
     Error, State,
     changes::{InstallPreview, InstallReason, LinkPreview},
-    library::{AcquisitionPreview, BundleSource, Library, RemovePreview, UpdatePreview, hash},
+    library::{
+        AcquisitionPreview, BundleSource, Library, RemoteUpdatePreview, RemovePreview,
+        UpdatePreview, hash,
+    },
     library_io::invalid,
     targets::InstallScope,
 };
@@ -88,6 +91,11 @@ pub enum ChangeRequest {
         /// Replacement source directory.
         source: PathBuf,
     },
+    /// Replace a catalog bundle at its existing library path.
+    UpdateRemoteLibrarySkill {
+        /// Exact replacement declaration from the selected catalog.
+        source: BundleSource,
+    },
 }
 
 impl ChangeRequest {
@@ -99,7 +107,7 @@ impl ChangeRequest {
             Self::UnlinkManaged { .. } => 0,
             Self::AcquireLibrarySkill { .. } => 1,
             Self::InstallLink { .. } | Self::InstallScoped { .. } => 2,
-            Self::UpdateLibrarySkill { .. } => 3,
+            Self::UpdateLibrarySkill { .. } | Self::UpdateRemoteLibrarySkill { .. } => 3,
             Self::RemoveUnusedLibrarySkill { .. } => 4,
         }
     }
@@ -124,6 +132,8 @@ pub enum ChangeDetail {
     Unlink(LinkPreview),
     /// Library update preview.
     Update(UpdatePreview),
+    /// Preview of a catalog bundle replacement and any provenance change.
+    RemoteUpdate(Box<RemoteUpdatePreview>),
     /// Library removal preview.
     Remove(RemovePreview),
 }
@@ -368,6 +378,7 @@ impl Library {
                 hash(&serde_json::to_vec(&(&id, &detail))?)
             }
             Some(ChangeDetail::Update(p)) => p.fingerprint.clone(),
+            Some(ChangeDetail::RemoteUpdate(p)) => p.fingerprint.clone(),
             Some(ChangeDetail::Remove(p)) => p.fingerprint.clone(),
             None => hash(&serde_json::to_vec(&("blocked", &id, &blocker))?),
         };
@@ -415,6 +426,7 @@ impl Library {
             Some(ChangeDetail::Install(p)) => self.apply(state, p).map(drop),
             Some(ChangeDetail::Unlink(p)) => self.apply_unlink(p).map(drop),
             Some(ChangeDetail::Update(p)) => self.apply_update(p).map(drop),
+            Some(ChangeDetail::RemoteUpdate(p)) => self.apply_remote_update(p, fetch).map(drop),
             Some(ChangeDetail::Remove(p)) => self.apply_remove_unused(state, p),
             Some(ChangeDetail::Acquire(p)) => {
                 let ChangeRequest::AcquireLibrarySkill { install_name, .. } = &reviewed.request
